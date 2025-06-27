@@ -230,52 +230,8 @@ expo build:android --type app-bundle
 # Build for iOS
 expo build:ios
 ```
-
-## Contributing
-
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add some amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
-
-### Development Guidelines
-- Follow TypeScript best practices
-- Write meaningful commit messages
-- Add tests for new features
-- Update documentation as needed
-- Follow the existing code style
-
 ## License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
-## Support
-
-If you encounter any issues or have questions:
-
-1. Check the [Issues](https://github.com/your-repo/issues) page
-2. Create a new issue with detailed information
-3. Contact the development team
-
-## Roadmap
-
-### Upcoming Features
-- [ ] Advanced image editing capabilities
-- [ ] Cloud storage integration
-- [ ] Social sharing features
-- [ ] Offline mode support
-- [ ] Multi-language support
-- [ ] Advanced filtering and search
-- [ ] Batch image generation
-- [ ] Custom model support
-
-### Performance Improvements
-- [ ] Image caching optimization
-- [ ] Lazy loading for image history
-- [ ] Memory usage optimization
-- [ ] Faster image generation queue
-
----
 
 **Built with React Native, Expo, and TypeScript**
