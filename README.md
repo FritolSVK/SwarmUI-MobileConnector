@@ -1,50 +1,150 @@
-# Welcome to your Expo app 👋
+# AI Image Generation App
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+A React Native/Expo application for generating AI images with advanced parameters and history management.
 
-## Get started
+## Project Structure
 
-1. Install dependencies
+The project has been reorganized for better maintainability and logical separation of concerns:
 
-   ```bash
-   npm install
-   ```
-
-2. Start the app
-
-   ```bash
-   npx expo start
-   ```
-
-In the output, you'll find options to open the app in a
-
-- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
-- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
-- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
-- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
-
-You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
-
-## Get a fresh project
-
-When you're ready, run:
-
-```bash
-npm run reset-project
+```
+MyProject/
+├── src/                          # Main source code directory
+│   ├── components/               # React components
+│   │   ├── ui/                   # Reusable UI components
+│   │   │   ├── ArrowButton.tsx   # Generic arrow button component
+│   │   │   ├── ImageViewer.tsx   # Image display component
+│   │   │   ├── PromptInput.tsx   # Text input for prompts
+│   │   │   └── index.ts          # UI components exports
+│   │   ├── features/             # Feature-specific components
+│   │   │   ├── NavigationHeader.tsx      # App navigation
+│   │   │   ├── Settings.tsx              # Settings screen
+│   │   │   ├── ImageHistory.tsx          # Image gallery
+│   │   │   ├── SidePanel.tsx             # Side panel with controls
+│   │   │   ├── CoreParametersSection.tsx # Core generation parameters
+│   │   │   ├── SamplingSection.tsx       # Sampling parameters
+│   │   │   └── index.ts                  # Feature components exports
+│   │   └── index.ts              # Main components exports
+│   ├── hooks/                    # Custom React hooks
+│   │   ├── useImageGeneration.ts # Image generation logic
+│   │   ├── useImageHistory.ts    # Image history management
+│   │   ├── useImageZoom.ts       # Image zoom functionality
+│   │   ├── useSidePanel.ts       # Side panel state management
+│   │   └── index.ts              # Hooks exports
+│   ├── services/                 # External services and APIs
+│   │   └── api.ts                # API service for image generation
+│   ├── types/                    # TypeScript type definitions
+│   │   └── index.ts              # All app types and interfaces
+│   ├── utils/                    # Utility functions
+│   │   └── imageUtils.ts         # Image-related utilities
+│   ├── constants/                # App constants and configuration
+│   │   └── config.ts             # Configuration constants
+│   └── screens/                  # Screen components
+│       └── HomeScreen.tsx        # Main application screen
+├── app/                          # Expo Router structure
+│   └── (tabs)/
+│       └── index.tsx             # Entry point (imports HomeScreen)
+├── assets/                       # Static assets
+│   ├── fonts/                    # Custom fonts
+│   └── images/                   # App images and icons
+├── scripts/                      # Build and utility scripts
+│   └── reset-project.js          # Project reset script
+├── package.json                  # Dependencies and scripts
+├── tsconfig.json                 # TypeScript configuration
+└── README.md                     # This file
 ```
 
-This command will move the starter code to the **app-example** directory and create a blank **app** directory where you can start developing.
+## Key Features
 
-## Learn more
+### Image Generation
+- AI-powered image generation with customizable parameters
+- Support for multiple samplers and schedulers
+- Configurable steps and CFG scale
+- Queue-based generation system
 
-To learn more about developing your project with Expo, look at the following resources:
+### Image Management
+- Automatic saving of generated images
+- Image history with thumbnails
+- Full-screen image viewing
+- Image metadata storage (prompt, timestamp)
 
-- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
-- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
+### User Interface
+- Modern, responsive design
+- Collapsible side panel for parameters
+- Tab-based navigation (Main, History, Settings)
+- Real-time generation status
 
-## Join the community
+### Settings
+- Configurable generation parameters
+- History management options
+- App preferences
+- Data export functionality
 
-Join our community of developers creating universal apps.
+## Component Organization
 
-- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
-- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+### UI Components (`src/components/ui/`)
+Reusable, generic components that can be used across different features:
+- **ArrowButton**: Generic directional button
+- **ImageViewer**: Image display with zoom capabilities
+- **PromptInput**: Text input with generation controls
+
+### Feature Components (`src/components/features/`)
+Components specific to app features and business logic:
+- **NavigationHeader**: App navigation with tab switching
+- **Settings**: Settings screen with various options
+- **ImageHistory**: Image gallery with history management
+- **SidePanel**: Collapsible panel for generation parameters
+- **CoreParametersSection**: Steps and CFG scale controls
+- **SamplingSection**: Sampler and scheduler selection
+
+## Hooks Organization
+
+Custom React hooks for state management and business logic:
+- **useImageGeneration**: Manages image generation state and API calls
+- **useImageHistory**: Handles image history storage and retrieval
+- **useImageZoom**: Provides image zoom and pan functionality
+- **useSidePanel**: Manages side panel state and animations
+
+## Development
+
+### Prerequisites
+- Node.js (v16 or higher)
+- Expo CLI
+- React Native development environment
+
+### Installation
+```bash
+npm install
+```
+
+### Running the App
+```bash
+npm start
+```
+
+### Available Scripts
+- `npm start`: Start the Expo development server
+- `npm run android`: Run on Android device/emulator
+- `npm run ios`: Run on iOS device/simulator
+- `npm run web`: Run in web browser
+- `npm run reset-project`: Reset project to initial state
+
+## Architecture Benefits
+
+This reorganization provides several benefits:
+
+1. **Logical Separation**: Components are grouped by their purpose (UI vs features)
+2. **Maintainability**: Related code is co-located, making it easier to find and modify
+3. **Reusability**: UI components are separated and can be easily reused
+4. **Scalability**: New features can be added without affecting existing code
+5. **Type Safety**: Centralized type definitions ensure consistency
+6. **Clear Dependencies**: Import paths clearly show component relationships
+
+## Future Enhancements
+
+The new structure makes it easy to add:
+- New image generation models
+- Additional UI themes
+- Plugin system for custom components
+- Advanced image editing features
+- Social sharing capabilities
+- Cloud storage integration

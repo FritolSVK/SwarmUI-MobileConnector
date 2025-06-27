@@ -1,7 +1,7 @@
 {
   "expo": {
-    "name": "MyProject",
-    "slug": "MyProject",
+    "name": "SwarmUI-MobileConnector",
+    "slug": "SwarmUI-MobileConnector",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
