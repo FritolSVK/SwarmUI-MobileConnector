@@ -6,12 +6,16 @@ import { apiService } from '../services/api';
 import { HistoryImage } from '../types/HistoryImage';
 import { cleanupThumbnails, createAndStoreThumbnail } from '../utils/imageUtils';
 import {
+    cleanupOrphanedMetadata,
     clearAllThumbnails,
     debugCachedImagesMetadata,
+    debugImageArray,
+    forceRefreshMetadata,
     generateCachedImageId,
     listAllThumbnails,
     loadCachedImagesMetadata,
     metadataToHistoryImage,
+    removeDuplicateImages,
     sortImagesByDate
 } from '../utils/storage';
 
@@ -55,7 +59,7 @@ export const useImageHistory = () => {
         try {
           metaParams = JSON.parse(file.metadata);
         } catch (e) {
-          // ignore parse errors
+          console.warn('Failed to parse metadata for file:', file.src, e);
         }
       }
       // Flatten nested metadata
@@ -63,8 +67,12 @@ export const useImageHistory = () => {
       const suiExtra = metaParams.sui_extra_data || {};
       const suiModels = Array.isArray(metaParams.sui_models) ? metaParams.sui_models : [];
       const cleanSrc = stripRawPrefix(file.src);
+      
+      // Create a consistent ID based on filename, not index
+      const consistentId = cleanSrc.replace(/[^a-zA-Z0-9-_]/g, '_');
+      
       return {
-        id: `${file.src}-${index}`,
+        id: consistentId, // Use consistent ID based on filename
         url: `${API_CONFIG.SWARM_BASE_URL}/View/local/raw/${encodeURIComponent(cleanSrc)}`,
         filename: cleanSrc,
         prompt: suiParams.prompt ?? 'No prompt available',
@@ -223,6 +231,9 @@ export const useImageHistory = () => {
       // Clean up any corrupted thumbnails first
       await cleanupThumbnails();
       
+      // Clean up orphaned metadata entries
+      await cleanupOrphanedMetadata();
+      
       // Always load cached images first (both online and offline mode)
       console.log('Loading cached images...');
       const docDir = FileSystem.documentDirectory;
@@ -254,16 +265,26 @@ export const useImageHistory = () => {
             const safeId = filename; // The filename is the safe ID
             let metadata = null;
             
+            console.log(`Looking for metadata for thumbnail: ${filename}`);
+            
             // First try to find metadata by the safe ID directly
             if (cachedMetadata[safeId]) {
               metadata = cachedMetadata[safeId];
+              console.log(`Found metadata by direct ID match: ${safeId}`);
             } else {
               // If not found, try to find by matching the original ID pattern
               // Look for metadata entries that might match this thumbnail
               for (const [metadataId, meta] of Object.entries(cachedMetadata)) {
+                // Try multiple matching strategies
                 const metadataSafeId = metadataId.replace(/[^a-zA-Z0-9-_]/g, '_');
-                if (metadataSafeId === safeId) {
+                const filenameSafeId = filename.replace(/[^a-zA-Z0-9-_]/g, '_');
+                
+                if (metadataSafeId === safeId || 
+                    metadataSafeId === filenameSafeId || 
+                    metadataId.includes(filename) ||
+                    meta.filename === filename) {
                   metadata = meta;
+                  console.log(`Found metadata by pattern match: ${metadataId} -> ${filename}`);
                   break;
                 }
               }
@@ -271,9 +292,11 @@ export const useImageHistory = () => {
             
             if (metadata) {
               // Use saved metadata to restore full image properties
+              console.log(`Using metadata for ${filename}: prompt="${metadata.prompt}", timestamp=${metadata.timestamp}`);
               return metadataToHistoryImage(metadata, thumbnailUri);
             } else {
               // Fallback for images without metadata (legacy cached images)
+              console.log(`No metadata found for ${filename}, using fallback`);
               const fallbackId = generateCachedImageId(filename);
               return {
                 id: fallbackId,
@@ -299,10 +322,16 @@ export const useImageHistory = () => {
             }
           });
           
-          // Sort cached images by generation date (newest first)
-          const sortedCachedImages = sortImagesByDate(cachedImages);
+          // Remove duplicates and sort cached images by generation date (newest first)
+          const uniqueCachedImages = removeDuplicateImages(cachedImages);
+          const sortedCachedImages = sortImagesByDate(uniqueCachedImages);
           
-          console.log(`Sorted ${sortedCachedImages.length} cached images by date`);
+          // Debug the cached images
+          debugImageArray(cachedImages, 'Before deduplication');
+          debugImageArray(uniqueCachedImages, 'After deduplication');
+          debugImageArray(sortedCachedImages, 'After sorting');
+          
+          console.log(`Processed ${cachedImages.length} cached images, removed ${cachedImages.length - uniqueCachedImages.length} duplicates, sorted ${sortedCachedImages.length} unique images by date`);
           if (sortedCachedImages.length > 0) {
             const oldest = sortedCachedImages[sortedCachedImages.length - 1].timestamp;
             const newest = sortedCachedImages[0].timestamp;
@@ -330,6 +359,9 @@ export const useImageHistory = () => {
           const firstPageFiles = response.files.slice(0, ITEMS_PER_PAGE);
           const imageObjects = processImageFiles(firstPageFiles);
           
+          // Debug server images
+          debugImageArray(imageObjects, 'Server images before combining');
+          
           // Add server images to the existing cached images
           const imagesWithLoadingStates = imageObjects.map((image) => ({
             ...image,
@@ -339,9 +371,16 @@ export const useImageHistory = () => {
           
           setImages(prev => {
             const newImages = [...prev, ...imagesWithLoadingStates];
-            // Sort all images by date (newest first) to ensure proper ordering
-            const sortedImages = sortImagesByDate(newImages);
-            console.log(`Combined ${prev.length} cached + ${imagesWithLoadingStates.length} server images, sorted by date`);
+            // Remove duplicates and sort all images by date (newest first) to ensure proper ordering
+            const uniqueImages = removeDuplicateImages(newImages);
+            const sortedImages = sortImagesByDate(uniqueImages);
+            
+            // Debug combined images
+            debugImageArray(newImages, 'Combined images before deduplication');
+            debugImageArray(uniqueImages, 'Combined images after deduplication');
+            debugImageArray(sortedImages, 'Final sorted images');
+            
+            console.log(`Combined ${prev.length} cached + ${imagesWithLoadingStates.length} server images, removed ${newImages.length - uniqueImages.length} duplicates, sorted ${sortedImages.length} unique images by date`);
             if (sortedImages.length > 0) {
               const oldest = sortedImages[sortedImages.length - 1].timestamp;
               const newest = sortedImages[0].timestamp;
@@ -407,8 +446,9 @@ export const useImageHistory = () => {
       }));
       setImages(prev => {
         const newImages = [...prev, ...imagesWithLoadingStates];
-        // Sort all images by date (newest first) to maintain proper ordering
-        return sortImagesByDate(newImages);
+        // Remove duplicates and sort all images by date (newest first) to maintain proper ordering
+        const uniqueImages = removeDuplicateImages(newImages);
+        return sortImagesByDate(uniqueImages);
       });
       setCurrentPage(nextPage);
       setHasMore(endIndex < allImageFiles.length);
@@ -492,6 +532,9 @@ export const useImageHistory = () => {
       // Clean up any corrupted thumbnails first
       await cleanupThumbnails();
       
+      // Clean up orphaned metadata entries
+      await cleanupOrphanedMetadata();
+      
       // Always load cached images first (both online and offline mode)
       console.log('Loading cached images...');
       const docDir = FileSystem.documentDirectory;
@@ -523,16 +566,26 @@ export const useImageHistory = () => {
             const safeId = filename; // The filename is the safe ID
             let metadata = null;
             
+            console.log(`Looking for metadata for thumbnail: ${filename}`);
+            
             // First try to find metadata by the safe ID directly
             if (cachedMetadata[safeId]) {
               metadata = cachedMetadata[safeId];
+              console.log(`Found metadata by direct ID match: ${safeId}`);
             } else {
               // If not found, try to find by matching the original ID pattern
               // Look for metadata entries that might match this thumbnail
               for (const [metadataId, meta] of Object.entries(cachedMetadata)) {
+                // Try multiple matching strategies
                 const metadataSafeId = metadataId.replace(/[^a-zA-Z0-9-_]/g, '_');
-                if (metadataSafeId === safeId) {
+                const filenameSafeId = filename.replace(/[^a-zA-Z0-9-_]/g, '_');
+                
+                if (metadataSafeId === safeId || 
+                    metadataSafeId === filenameSafeId || 
+                    metadataId.includes(filename) ||
+                    meta.filename === filename) {
                   metadata = meta;
+                  console.log(`Found metadata by pattern match: ${metadataId} -> ${filename}`);
                   break;
                 }
               }
@@ -540,9 +593,11 @@ export const useImageHistory = () => {
             
             if (metadata) {
               // Use saved metadata to restore full image properties
+              console.log(`Using metadata for ${filename}: prompt="${metadata.prompt}", timestamp=${metadata.timestamp}`);
               return metadataToHistoryImage(metadata, thumbnailUri);
             } else {
               // Fallback for images without metadata (legacy cached images)
+              console.log(`No metadata found for ${filename}, using fallback`);
               const fallbackId = generateCachedImageId(filename);
               return {
                 id: fallbackId,
@@ -568,10 +623,16 @@ export const useImageHistory = () => {
             }
           });
           
-          // Sort cached images by generation date (newest first)
-          const sortedCachedImages = sortImagesByDate(cachedImages);
+          // Remove duplicates and sort cached images by generation date (newest first)
+          const uniqueCachedImages = removeDuplicateImages(cachedImages);
+          const sortedCachedImages = sortImagesByDate(uniqueCachedImages);
           
-          console.log(`Sorted ${sortedCachedImages.length} cached images by date`);
+          // Debug the cached images
+          debugImageArray(cachedImages, 'Before deduplication');
+          debugImageArray(uniqueCachedImages, 'After deduplication');
+          debugImageArray(sortedCachedImages, 'After sorting');
+          
+          console.log(`Processed ${cachedImages.length} cached images, removed ${cachedImages.length - uniqueCachedImages.length} duplicates, sorted ${sortedCachedImages.length} unique images by date`);
           if (sortedCachedImages.length > 0) {
             const oldest = sortedCachedImages[sortedCachedImages.length - 1].timestamp;
             const newest = sortedCachedImages[0].timestamp;
@@ -599,6 +660,9 @@ export const useImageHistory = () => {
           const firstPageFiles = response.files.slice(0, ITEMS_PER_PAGE);
           const imageObjects = processImageFiles(firstPageFiles);
           
+          // Debug server images
+          debugImageArray(imageObjects, 'Server images before combining');
+          
           // Add server images to the existing cached images
           const imagesWithLoadingStates = imageObjects.map((image) => ({
             ...image,
@@ -608,9 +672,16 @@ export const useImageHistory = () => {
           
           setImages(prev => {
             const newImages = [...prev, ...imagesWithLoadingStates];
-            // Sort all images by date (newest first) to ensure proper ordering
-            const sortedImages = sortImagesByDate(newImages);
-            console.log(`Combined ${prev.length} cached + ${imagesWithLoadingStates.length} server images, sorted by date`);
+            // Remove duplicates and sort all images by date (newest first) to ensure proper ordering
+            const uniqueImages = removeDuplicateImages(newImages);
+            const sortedImages = sortImagesByDate(uniqueImages);
+            
+            // Debug combined images
+            debugImageArray(newImages, 'Combined images before deduplication');
+            debugImageArray(uniqueImages, 'Combined images after deduplication');
+            debugImageArray(sortedImages, 'Final sorted images');
+            
+            console.log(`Combined ${prev.length} cached + ${imagesWithLoadingStates.length} server images, removed ${newImages.length - uniqueImages.length} duplicates, sorted ${sortedImages.length} unique images by date`);
             if (sortedImages.length > 0) {
               const oldest = sortedImages[sortedImages.length - 1].timestamp;
               const newest = sortedImages[0].timestamp;
@@ -697,6 +768,18 @@ export const useImageHistory = () => {
     ));
   }, []);
 
+  const forceRefreshMetadataAndReload = useCallback(async () => {
+    try {
+      console.log('Force refreshing metadata and reloading images...');
+      await forceRefreshMetadata();
+      await cleanupOrphanedMetadata();
+      setHasLoaded(false); // Reset loaded state to force reload
+      await fetchImages();
+    } catch (error) {
+      console.error('Failed to force refresh metadata:', error);
+    }
+  }, [fetchImages]);
+
   return {
     images,
     loading,
@@ -714,6 +797,7 @@ export const useImageHistory = () => {
     fetchImages,
     loadImageData,
     releaseImageData,
+    forceRefreshMetadataAndReload,
     totalCount: allImageFiles.length,
     loadedThumbnailCount: images.filter(img => img.thumbnailUri && !img.thumbnailFailed).length,
   };

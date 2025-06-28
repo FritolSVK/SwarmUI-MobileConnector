@@ -266,6 +266,8 @@ export async function createAndStoreThumbnail(
     if (imageMetadata) {
       try {
         const metadata = historyImageToMetadata(imageMetadata);
+        // Use the safeId (filename) as the metadata key for consistency
+        metadata.id = safeId;
         await saveCachedImageMetadata(metadata);
         console.log('Saved metadata for cached image:', safeId);
       } catch (metadataError) {
