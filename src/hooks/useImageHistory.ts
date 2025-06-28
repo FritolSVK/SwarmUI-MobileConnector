@@ -24,6 +24,13 @@ function stripRawPrefix(path: string) {
   return path.startsWith('raw/') ? path.slice(4) : path;
 }
 
+// Utility function to detect video files
+function isVideoFile(filename: string): boolean {
+  const videoExtensions = ['.webm', '.mp4', '.avi', '.mov', '.mkv', '.flv', '.wmv'];
+  const fileExtension = filename.toLowerCase().substring(filename.lastIndexOf('.'));
+  return videoExtensions.includes(fileExtension);
+}
+
 export const useImageHistory = () => {
   const [images, setImages] = useState<HistoryImage[]>([]);
   const [loading, setLoading] = useState(false);
@@ -53,44 +60,54 @@ export const useImageHistory = () => {
   }, [sessionId]);
 
   const processImageFiles = useCallback((files: {src: string; metadata?: string}[]) => {
-    return files.map((file, index) => {
-      let metaParams: any = {};
-      if (file.metadata) {
-        try {
-          metaParams = JSON.parse(file.metadata);
-        } catch (e) {
-          console.warn('Failed to parse metadata for file:', file.src, e);
+    return files
+      .filter(file => {
+        // Filter out video files completely
+        const cleanSrc = stripRawPrefix(file.src);
+        if (isVideoFile(cleanSrc)) {
+          console.log(`Filtering out video file: ${cleanSrc}`);
+          return false;
         }
-      }
-      // Flatten nested metadata
-      const suiParams = metaParams.sui_image_params || {};
-      const suiExtra = metaParams.sui_extra_data || {};
-      const suiModels = Array.isArray(metaParams.sui_models) ? metaParams.sui_models : [];
-      const cleanSrc = stripRawPrefix(file.src);
-      
-      // Create a consistent ID based on filename, not index
-      const consistentId = cleanSrc.replace(/[^a-zA-Z0-9-_]/g, '_');
-      
-      return {
-        id: consistentId, // Use consistent ID based on filename
-        url: `${API_CONFIG.SWARM_BASE_URL}/View/local/raw/${encodeURIComponent(cleanSrc)}`,
-        filename: cleanSrc,
-        prompt: suiParams.prompt ?? 'No prompt available',
-        negativePrompt: suiParams.negativeprompt ?? '',
-        steps: suiParams.steps,
-        seed: suiParams.seed,
-        cfgscale: suiParams.cfgscale,
-        width: suiParams.width,
-        height: suiParams.height,
-        sampler: suiParams.sampler,
-        scheduler: suiParams.scheduler,
-        model: suiParams.model,
-        modelFile: suiModels[0]?.name,
-        date: suiExtra.date,
-        timestamp: suiExtra.date ? new Date(suiExtra.date) : (metaParams.timestamp ? new Date(metaParams.timestamp) : new Date()),
-        // fallback to metaParams.timestamp or now
-      };
-    });
+        return true;
+      })
+      .map((file, index) => {
+        let metaParams: any = {};
+        if (file.metadata) {
+          try {
+            metaParams = JSON.parse(file.metadata);
+          } catch (e) {
+            console.warn('Failed to parse metadata for file:', file.src, e);
+          }
+        }
+        // Flatten nested metadata
+        const suiParams = metaParams.sui_image_params || {};
+        const suiExtra = metaParams.sui_extra_data || {};
+        const suiModels = Array.isArray(metaParams.sui_models) ? metaParams.sui_models : [];
+        const cleanSrc = stripRawPrefix(file.src);
+        
+        // Create a consistent ID based on filename, not index
+        const consistentId = cleanSrc.replace(/[^a-zA-Z0-9-_]/g, '_');
+        
+        return {
+          id: consistentId, // Use consistent ID based on filename
+          url: `${API_CONFIG.SWARM_BASE_URL}/View/local/raw/${encodeURIComponent(cleanSrc)}`,
+          filename: cleanSrc,
+          prompt: suiParams.prompt ?? 'No prompt available',
+          negativePrompt: suiParams.negativeprompt ?? '',
+          steps: suiParams.steps,
+          seed: suiParams.seed,
+          cfgscale: suiParams.cfgscale,
+          width: suiParams.width,
+          height: suiParams.height,
+          sampler: suiParams.sampler,
+          scheduler: suiParams.scheduler,
+          model: suiParams.model,
+          modelFile: suiModels[0]?.name,
+          date: suiExtra.date,
+          timestamp: suiExtra.date ? new Date(suiExtra.date) : (metaParams.timestamp ? new Date(metaParams.timestamp) : new Date()),
+          // fallback to metaParams.timestamp or now
+        };
+      });
   }, []);
 
   // New function: fetch image and create thumbnail in one step
@@ -206,8 +223,10 @@ export const useImageHistory = () => {
     }
     abortController.current = new AbortController();
 
-    // Clear existing queue and add new items
-    thumbnailQueue.current = imageObjects.map((image, i) => ({
+    // Filter out video files and clear existing queue and add new items
+    const nonVideoImages = imageObjects.filter(image => !isVideoFile(image.filename));
+    
+    thumbnailQueue.current = nonVideoImages.map((image, i) => ({
       filename: image.filename,
       id: image.id,
       index: startIndex + i,
@@ -261,71 +280,80 @@ export const useImageHistory = () => {
           await debugCachedImagesMetadata();
           
           // Create image objects from cached thumbnails with metadata
-          const cachedImages = jpgThumbnails.map((thumbnailFile, index) => {
-            // Extract filename from thumbnail name (remove 'thumb_' prefix and '.jpg' suffix)
-            const filename = thumbnailFile.replace(/^thumb_/, '').replace(/\.jpg$/, '');
-            const thumbnailUri = `file://${thumbnailsDir}/${thumbnailFile}`;
-            
-            // Try to find metadata for this image by matching the safe ID
-            const safeId = filename; // The filename is the safe ID
-            let metadata = null;
-            
-            console.log(`Looking for metadata for thumbnail: ${filename}`);
-            
-            // First try to find metadata by the safe ID directly
-            if (cachedMetadata[safeId]) {
-              metadata = cachedMetadata[safeId];
-              console.log(`Found metadata by direct ID match: ${safeId}`);
-            } else {
-              // If not found, try to find by matching the original ID pattern
-              // Look for metadata entries that might match this thumbnail
-              for (const [metadataId, meta] of Object.entries(cachedMetadata)) {
-                // Try multiple matching strategies
-                const metadataSafeId = metadataId.replace(/[^a-zA-Z0-9-_]/g, '_');
-                const filenameSafeId = filename.replace(/[^a-zA-Z0-9-_]/g, '_');
-                
-                if (metadataSafeId === safeId || 
-                    metadataSafeId === filenameSafeId || 
-                    metadataId.includes(filename) ||
-                    meta.filename === filename) {
-                  metadata = meta;
-                  console.log(`Found metadata by pattern match: ${metadataId} -> ${filename}`);
-                  break;
+          const cachedImages = jpgThumbnails
+            .map((thumbnailFile, index) => {
+              // Extract filename from thumbnail name (remove 'thumb_' prefix and '.jpg' suffix)
+              const filename = thumbnailFile.replace(/^thumb_/, '').replace(/\.jpg$/, '');
+              const thumbnailUri = `file://${thumbnailsDir}/${thumbnailFile}`;
+              
+              // Try to find metadata for this image by matching the safe ID
+              const safeId = filename; // The filename is the safe ID
+              let metadata = null;
+              
+              console.log(`Looking for metadata for thumbnail: ${filename}`);
+              
+              // First try to find metadata by the safe ID directly
+              if (cachedMetadata[safeId]) {
+                metadata = cachedMetadata[safeId];
+                console.log(`Found metadata by direct ID match: ${safeId}`);
+              } else {
+                // If not found, try to find by matching the original ID pattern
+                // Look for metadata entries that might match this thumbnail
+                for (const [metadataId, meta] of Object.entries(cachedMetadata)) {
+                  // Try multiple matching strategies
+                  const metadataSafeId = metadataId.replace(/[^a-zA-Z0-9-_]/g, '_');
+                  const filenameSafeId = filename.replace(/[^a-zA-Z0-9-_]/g, '_');
+                  
+                  if (metadataSafeId === safeId || 
+                      metadataSafeId === filenameSafeId || 
+                      metadataId.includes(filename) ||
+                      meta.filename === filename) {
+                    metadata = meta;
+                    console.log(`Found metadata by pattern match: ${metadataId} -> ${filename}`);
+                    break;
+                  }
                 }
               }
-            }
-            
-            if (metadata) {
-              // Use saved metadata to restore full image properties
-              console.log(`Using metadata for ${filename}: prompt="${metadata.prompt}", timestamp=${metadata.timestamp}`);
-              return metadataToHistoryImage(metadata, thumbnailUri);
-            } else {
-              // Fallback for images without metadata (legacy cached images)
-              console.log(`No metadata found for ${filename}, using fallback`);
-              const fallbackId = generateCachedImageId(filename);
-              return {
-                id: fallbackId,
-                url: thumbnailUri,
-                filename: filename,
-                prompt: 'Cached image',
-                negativePrompt: '',
-                steps: 0,
-                seed: 0,
-                cfgscale: 0,
-                width: 0,
-                height: 0,
-                sampler: '',
-                scheduler: '',
-                model: '',
-                modelFile: '',
-                date: new Date().toISOString(),
-                timestamp: new Date(),
-                thumbnailUri,
-                thumbnailFailed: false,
-                imageData: undefined,
-              };
-            }
-          });
+              
+              if (metadata) {
+                // Use saved metadata to restore full image properties
+                console.log(`Using metadata for ${filename}: prompt="${metadata.prompt}", timestamp=${metadata.timestamp}`);
+                return metadataToHistoryImage(metadata, thumbnailUri);
+              } else {
+                // Fallback for images without metadata (legacy cached images)
+                console.log(`No metadata found for ${filename}, using fallback`);
+                const fallbackId = generateCachedImageId(filename);
+                return {
+                  id: fallbackId,
+                  url: thumbnailUri,
+                  filename: filename,
+                  prompt: 'Cached image',
+                  negativePrompt: '',
+                  steps: 0,
+                  seed: 0,
+                  cfgscale: 0,
+                  width: 0,
+                  height: 0,
+                  sampler: '',
+                  scheduler: '',
+                  model: '',
+                  modelFile: '',
+                  date: new Date().toISOString(),
+                  timestamp: new Date(),
+                  thumbnailUri,
+                  thumbnailFailed: false,
+                  imageData: undefined,
+                };
+              }
+            })
+            .filter(image => {
+              // Filter out video files from cached images
+              if (isVideoFile(image.filename)) {
+                console.log(`Filtering out cached video file: ${image.filename}`);
+                return false;
+              }
+              return true;
+            });
           
           // Remove duplicates and sort cached images by generation date (newest first)
           const uniqueCachedImages = removeDuplicateImages(cachedImages);
@@ -570,71 +598,80 @@ export const useImageHistory = () => {
           await debugCachedImagesMetadata();
           
           // Create image objects from cached thumbnails with metadata
-          const cachedImages = jpgThumbnails.map((thumbnailFile, index) => {
-            // Extract filename from thumbnail name (remove 'thumb_' prefix and '.jpg' suffix)
-            const filename = thumbnailFile.replace(/^thumb_/, '').replace(/\.jpg$/, '');
-            const thumbnailUri = `file://${thumbnailsDir}/${thumbnailFile}`;
-            
-            // Try to find metadata for this image by matching the safe ID
-            const safeId = filename; // The filename is the safe ID
-            let metadata = null;
-            
-            console.log(`Looking for metadata for thumbnail: ${filename}`);
-            
-            // First try to find metadata by the safe ID directly
-            if (cachedMetadata[safeId]) {
-              metadata = cachedMetadata[safeId];
-              console.log(`Found metadata by direct ID match: ${safeId}`);
-            } else {
-              // If not found, try to find by matching the original ID pattern
-              // Look for metadata entries that might match this thumbnail
-              for (const [metadataId, meta] of Object.entries(cachedMetadata)) {
-                // Try multiple matching strategies
-                const metadataSafeId = metadataId.replace(/[^a-zA-Z0-9-_]/g, '_');
-                const filenameSafeId = filename.replace(/[^a-zA-Z0-9-_]/g, '_');
-                
-                if (metadataSafeId === safeId || 
-                    metadataSafeId === filenameSafeId || 
-                    metadataId.includes(filename) ||
-                    meta.filename === filename) {
-                  metadata = meta;
-                  console.log(`Found metadata by pattern match: ${metadataId} -> ${filename}`);
-                  break;
+          const cachedImages = jpgThumbnails
+            .map((thumbnailFile, index) => {
+              // Extract filename from thumbnail name (remove 'thumb_' prefix and '.jpg' suffix)
+              const filename = thumbnailFile.replace(/^thumb_/, '').replace(/\.jpg$/, '');
+              const thumbnailUri = `file://${thumbnailsDir}/${thumbnailFile}`;
+              
+              // Try to find metadata for this image by matching the safe ID
+              const safeId = filename; // The filename is the safe ID
+              let metadata = null;
+              
+              console.log(`Looking for metadata for thumbnail: ${filename}`);
+              
+              // First try to find metadata by the safe ID directly
+              if (cachedMetadata[safeId]) {
+                metadata = cachedMetadata[safeId];
+                console.log(`Found metadata by direct ID match: ${safeId}`);
+              } else {
+                // If not found, try to find by matching the original ID pattern
+                // Look for metadata entries that might match this thumbnail
+                for (const [metadataId, meta] of Object.entries(cachedMetadata)) {
+                  // Try multiple matching strategies
+                  const metadataSafeId = metadataId.replace(/[^a-zA-Z0-9-_]/g, '_');
+                  const filenameSafeId = filename.replace(/[^a-zA-Z0-9-_]/g, '_');
+                  
+                  if (metadataSafeId === safeId || 
+                      metadataSafeId === filenameSafeId || 
+                      metadataId.includes(filename) ||
+                      meta.filename === filename) {
+                    metadata = meta;
+                    console.log(`Found metadata by pattern match: ${metadataId} -> ${filename}`);
+                    break;
+                  }
                 }
               }
-            }
-            
-            if (metadata) {
-              // Use saved metadata to restore full image properties
-              console.log(`Using metadata for ${filename}: prompt="${metadata.prompt}", timestamp=${metadata.timestamp}`);
-              return metadataToHistoryImage(metadata, thumbnailUri);
-            } else {
-              // Fallback for images without metadata (legacy cached images)
-              console.log(`No metadata found for ${filename}, using fallback`);
-              const fallbackId = generateCachedImageId(filename);
-              return {
-                id: fallbackId,
-                url: thumbnailUri,
-                filename: filename,
-                prompt: 'Cached image',
-                negativePrompt: '',
-                steps: 0,
-                seed: 0,
-                cfgscale: 0,
-                width: 0,
-                height: 0,
-                sampler: '',
-                scheduler: '',
-                model: '',
-                modelFile: '',
-                date: new Date().toISOString(),
-                timestamp: new Date(),
-                thumbnailUri,
-                thumbnailFailed: false,
-                imageData: undefined,
-              };
-            }
-          });
+              
+              if (metadata) {
+                // Use saved metadata to restore full image properties
+                console.log(`Using metadata for ${filename}: prompt="${metadata.prompt}", timestamp=${metadata.timestamp}`);
+                return metadataToHistoryImage(metadata, thumbnailUri);
+              } else {
+                // Fallback for images without metadata (legacy cached images)
+                console.log(`No metadata found for ${filename}, using fallback`);
+                const fallbackId = generateCachedImageId(filename);
+                return {
+                  id: fallbackId,
+                  url: thumbnailUri,
+                  filename: filename,
+                  prompt: 'Cached image',
+                  negativePrompt: '',
+                  steps: 0,
+                  seed: 0,
+                  cfgscale: 0,
+                  width: 0,
+                  height: 0,
+                  sampler: '',
+                  scheduler: '',
+                  model: '',
+                  modelFile: '',
+                  date: new Date().toISOString(),
+                  timestamp: new Date(),
+                  thumbnailUri,
+                  thumbnailFailed: false,
+                  imageData: undefined,
+                };
+              }
+            })
+            .filter(image => {
+              // Filter out video files from cached images
+              if (isVideoFile(image.filename)) {
+                console.log(`Filtering out cached video file: ${image.filename}`);
+                return false;
+              }
+              return true;
+            });
           
           // Remove duplicates and sort cached images by generation date (newest first)
           const uniqueCachedImages = removeDuplicateImages(cachedImages);
