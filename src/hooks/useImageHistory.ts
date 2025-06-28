@@ -1,9 +1,11 @@
-import { useCallback, useState } from 'react';
+import * as FileSystem from 'expo-file-system';
+import { useCallback, useRef, useState } from 'react';
 import { API_CONFIG } from '../constants/config';
 import { useSession } from '../contexts';
 import { apiService } from '../services/api';
 import { HistoryImage } from '../types/HistoryImage';
 import { cleanupThumbnails, createAndStoreThumbnail } from '../utils/imageUtils';
+import { clearAllThumbnails, listAllThumbnails } from '../utils/storage';
 
 // Helper to strip leading "raw/" if present
 function stripRawPrefix(path: string) {
@@ -21,6 +23,11 @@ export const useImageHistory = () => {
   const [loadingMore, setLoadingMore] = useState(false);
   const [isLoadingThumbnails, setIsLoadingThumbnails] = useState(false);
   const { sessionId } = useSession();
+  
+  // Queue management for thumbnail loading
+  const thumbnailQueue = useRef<{filename: string; id: string; index: number}[]>([]);
+  const isProcessingQueue = useRef(false);
+  const abortController = useRef<AbortController | null>(null);
 
   const ITEMS_PER_PAGE = 20;
 
@@ -73,14 +80,38 @@ export const useImageHistory = () => {
   // New function: fetch image and create thumbnail in one step
   const fetchAndCreateThumbnail = useCallback(async (filename: string, id: string): Promise<string | undefined> => {
     try {
+      // Skip video files - ImageManipulator cannot handle video formats
+      const videoExtensions = ['.webm', '.mp4', '.avi', '.mov', '.mkv', '.flv', '.wmv'];
+      const fileExtension = filename.toLowerCase().substring(filename.lastIndexOf('.'));
+      if (videoExtensions.includes(fileExtension)) {
+        console.log(`Skipping video file for thumbnail creation: ${filename}`);
+        return undefined;
+      }
+      
+      // Create a safe ID for thumbnail filename
+      const safeId = id.replace(/[^a-zA-Z0-9-_]/g, '_');
+      const docDir = FileSystem.documentDirectory;
+      if (!docDir) {
+        throw new Error('Document directory not available');
+      }
+      
+      // Check if we already have a cached JPG thumbnail
+      const thumbnailsDir = `${docDir}thumbnails`;
+      const cachedThumbPath = `${thumbnailsDir}/thumb_${safeId}.jpg`;
+      
+      // Check if cached thumbnail exists
+      const cachedThumbInfo = await FileSystem.getInfoAsync(cachedThumbPath);
+      if (cachedThumbInfo.exists && cachedThumbInfo.size > 0) {
+        return cachedThumbPath;
+      }
+      
       const imageData = await apiService.fetchImage(filename, sessionId || undefined);
       if (!imageData) {
         console.warn('No image data received for filename:', filename);
         return undefined;
       }
       
-      // Create a safe ID for thumbnail creation
-      const safeId = `${id}_${Date.now()}`;
+      // Create and store JPG thumbnail
       const thumbnailUri = await createAndStoreThumbnail(imageData, safeId);
       
       if (!thumbnailUri) {
@@ -96,49 +127,174 @@ export const useImageHistory = () => {
     }
   }, [sessionId]);
 
+  // Process thumbnail queue one by one - no artificial delays
+  const processThumbnailQueue = useCallback(async () => {
+    if (isProcessingQueue.current || thumbnailQueue.current.length === 0) {
+      return;
+    }
+
+    isProcessingQueue.current = true;
+    
+    while (thumbnailQueue.current.length > 0) {
+      // Check if we should abort
+      if (abortController.current?.signal.aborted) {
+        console.log('Thumbnail loading aborted');
+        break;
+      }
+
+      const item = thumbnailQueue.current.shift();
+      if (!item) break;
+
+      try {
+        const thumbnailUri = await fetchAndCreateThumbnail(item.filename, item.id);
+        
+        if (thumbnailUri) {
+          // Success - set the thumbnail URI
+          setImages(prev => prev.map((img, index) => 
+            index === item.index 
+              ? { ...img, thumbnailUri, thumbnailFailed: false }
+              : img
+          ));
+        } else {
+          // Failed to create thumbnail - mark as failed
+          console.warn(`Failed to create thumbnail for ${item.filename} - marking as failed`);
+          setImages(prev => prev.map((img, index) => 
+            index === item.index 
+              ? { ...img, thumbnailFailed: true }
+              : img
+          ));
+        }
+        
+        // No artificial delay - next image starts immediately after this one finishes
+        
+      } catch (error) {
+        console.warn(`Failed to load thumbnail for image ${item.index + 1}:`, error);
+        // Mark as failed and continue with next image
+        setImages(prev => prev.map((img, index) => 
+          index === item.index 
+            ? { ...img, thumbnailFailed: true }
+            : img
+        ));
+      }
+    }
+
+    isProcessingQueue.current = false;
+    setIsLoadingThumbnails(false);
+  }, [fetchAndCreateThumbnail]);
+
+  // Add images to thumbnail queue
+  const queueThumbnails = useCallback((imageObjects: any[], startIndex: number = 0) => {
+    // Cancel any existing queue processing
+    if (abortController.current) {
+      abortController.current.abort();
+    }
+    abortController.current = new AbortController();
+
+    // Clear existing queue and add new items
+    thumbnailQueue.current = imageObjects.map((image, i) => ({
+      filename: image.filename,
+      id: image.id,
+      index: startIndex + i
+    }));
+
+    setIsLoadingThumbnails(true);
+    processThumbnailQueue();
+  }, [processThumbnailQueue]);
+
   const fetchImages = useCallback(async () => {
     if (hasLoaded) return; // Don't fetch again if already loaded
     setLoading(true);
     setError(null);
     try {
+      // Debug: List existing thumbnails
+      console.log('=== DEBUG: Listing existing thumbnails ===');
+      await listAllThumbnails();
+      console.log('=== END DEBUG ===');
+      
       // Clean up any corrupted thumbnails first
       await cleanupThumbnails();
       
-      const response = await apiService.listImages("", 3, "Name", false, sessionId || undefined);
-      setAllImageFiles(response.files);
-      const firstPageFiles = response.files.slice(0, ITEMS_PER_PAGE);
-      const imageObjects = processImageFiles(firstPageFiles);
-      
-      // Set images immediately with loading states (no thumbnails yet)
-      const imagesWithLoadingStates = imageObjects.map((image) => ({
-        ...image,
-        imageData: undefined,
-        thumbnailUri: undefined, // This will trigger loading state
-      }));
-      setImages(imagesWithLoadingStates);
-      setCurrentPage(0);
-      setHasMore(response.files.length > ITEMS_PER_PAGE);
-      setHasLoaded(true);
-      
-      // Load thumbnails sequentially to prevent timeouts
-      setIsLoadingThumbnails(true);
-      for (let i = 0; i < imageObjects.length; i++) {
-        const image = imageObjects[i];
-        try {
-          const thumbnailUri = await fetchAndCreateThumbnail(image.filename, image.id);
-          setImages(prev => prev.map((img, index) => 
-            index === i 
-              ? { ...img, thumbnailUri }
-              : img
-          ));
-          // Small delay between requests to prevent overwhelming the server
-          await new Promise(resolve => setTimeout(resolve, 100));
-        } catch (error) {
-          console.warn(`Failed to load thumbnail for image ${i + 1}/${imageObjects.length}:`, error);
-          // Continue with next image even if this one fails
+      if (sessionId) {
+        // Online mode - fetch from server
+        console.log('Online mode: fetching images from server');
+        const response = await apiService.listImages("", 3, "Name", false, sessionId || undefined);
+        setAllImageFiles(response.files);
+        const firstPageFiles = response.files.slice(0, ITEMS_PER_PAGE);
+        const imageObjects = processImageFiles(firstPageFiles);
+        
+        // Set images immediately with loading states (no thumbnails yet)
+        const imagesWithLoadingStates = imageObjects.map((image) => ({
+          ...image,
+          imageData: undefined,
+          thumbnailUri: undefined, // This will trigger loading state
+        }));
+        setImages(imagesWithLoadingStates);
+        setCurrentPage(0);
+        setHasMore(response.files.length > ITEMS_PER_PAGE);
+        setHasLoaded(true);
+        
+        // Queue thumbnails for loading one by one
+        queueThumbnails(imageObjects, 0);
+      } else {
+        // Offline mode - load only cached images
+        console.log('Offline mode: loading cached images only');
+        const docDir = FileSystem.documentDirectory;
+        if (!docDir) {
+          setImages([]);
+          setHasLoaded(true);
+          return;
         }
+        
+        const thumbnailsDir = `${docDir}thumbnails`;
+        const dirInfo = await FileSystem.getInfoAsync(thumbnailsDir);
+        
+        if (!dirInfo.exists) {
+          console.log('No thumbnails directory found in offline mode');
+          setImages([]);
+          setHasLoaded(true);
+          return;
+        }
+        
+        // Get all cached thumbnail files
+        const thumbnailFiles = await FileSystem.readDirectoryAsync(thumbnailsDir);
+        const jpgThumbnails = thumbnailFiles.filter(file => file.endsWith('.jpg'));
+        
+        console.log(`Found ${jpgThumbnails.length} cached thumbnails in offline mode`);
+        
+        // Create image objects from cached thumbnails
+        const cachedImages = jpgThumbnails.map((thumbnailFile, index) => {
+          // Extract filename from thumbnail name (remove 'thumb_' prefix and '.jpg' suffix)
+          const filename = thumbnailFile.replace(/^thumb_/, '').replace(/\.jpg$/, '');
+          
+          return {
+            id: `cached_${index}_${Date.now()}`,
+            url: `file://${thumbnailsDir}/${thumbnailFile}`,
+            filename: filename,
+            prompt: 'Cached image',
+            negativePrompt: '',
+            steps: 0,
+            seed: 0,
+            cfgscale: 0,
+            width: 0,
+            height: 0,
+            sampler: '',
+            scheduler: '',
+            model: '',
+            modelFile: '',
+            date: new Date().toISOString(),
+            timestamp: new Date(),
+            thumbnailUri: `file://${thumbnailsDir}/${thumbnailFile}`,
+            thumbnailFailed: false,
+            imageData: undefined,
+          };
+        });
+        
+        setImages(cachedImages);
+        setAllImageFiles([]);
+        setCurrentPage(0);
+        setHasMore(false);
+        setHasLoaded(true);
       }
-      setIsLoadingThumbnails(false);
       
     } catch (err) {
       console.error('Failed to fetch images:', err);
@@ -155,9 +311,8 @@ export const useImageHistory = () => {
       }
     } finally {
       setLoading(false);
-      setIsLoadingThumbnails(false);
     }
-  }, [hasLoaded, processImageFiles, sessionId, fetchAndCreateThumbnail]);
+  }, [hasLoaded, processImageFiles, sessionId, queueThumbnails]);
 
   const loadMoreImages = useCallback(async () => {
     if (loadingMore || !hasMore || isLoadingThumbnails) return; // Don't load more if still loading thumbnails
@@ -183,26 +338,8 @@ export const useImageHistory = () => {
       setCurrentPage(nextPage);
       setHasMore(endIndex < allImageFiles.length);
       
-      // Load thumbnails sequentially to prevent timeouts
-      setIsLoadingThumbnails(true);
-      const currentImagesLength = (nextPage * ITEMS_PER_PAGE);
-      for (let i = 0; i < imageObjects.length; i++) {
-        const image = imageObjects[i];
-        try {
-          const thumbnailUri = await fetchAndCreateThumbnail(image.filename, image.id);
-          setImages(prev => prev.map((img, index) => 
-            index === (currentImagesLength + i)
-              ? { ...img, thumbnailUri }
-              : img
-          ));
-          // Small delay between requests to prevent overwhelming the server
-          await new Promise(resolve => setTimeout(resolve, 100));
-        } catch (error) {
-          console.warn(`Failed to load thumbnail for image ${i + 1}/${imageObjects.length}:`, error);
-          // Continue with next image even if this one fails
-        }
-      }
-      setIsLoadingThumbnails(false);
+      // Queue thumbnails for loading one by one
+      queueThumbnails(imageObjects, startIndex);
       
     } catch (err) {
       console.error('Failed to load more images:', err);
@@ -214,9 +351,8 @@ export const useImageHistory = () => {
       }
     } finally {
       setLoadingMore(false);
-      setIsLoadingThumbnails(false);
     }
-  }, [loadingMore, hasMore, currentPage, allImageFiles, processImageFiles, fetchAndCreateThumbnail, isLoadingThumbnails]);
+  }, [loadingMore, hasMore, currentPage, allImageFiles, processImageFiles, queueThumbnails, isLoadingThumbnails]);
 
   const addImage = useCallback((imageUrl: string, prompt: string) => {
     const newImage: HistoryImage = {
@@ -234,12 +370,30 @@ export const useImageHistory = () => {
     setImages(prev => prev.filter(img => img.id !== imageId));
   }, []);
 
-  const clearHistory = useCallback(() => {
+  const clearHistory = useCallback(async () => {
+    try {
+      // Abort any ongoing thumbnail loading
+      if (abortController.current) {
+        abortController.current.abort();
+      }
+      
+      // Clear all thumbnails from device storage
+      await clearAllThumbnails();
+      console.log('All thumbnails cleared from device storage');
+    } catch (error) {
+      console.error('Failed to clear thumbnails:', error);
+      // Continue with clearing history even if thumbnail clearing fails
+    }
+    
+    // Clear the in-memory state
     setImages([]);
     setAllImageFiles([]);
     setCurrentPage(0);
     setHasMore(true);
     setHasLoaded(false);
+    thumbnailQueue.current = [];
+    isProcessingQueue.current = false;
+    setIsLoadingThumbnails(false);
     fetchImages(); // Immediately reload from the server
   }, [fetchImages]);
 
@@ -247,10 +401,155 @@ export const useImageHistory = () => {
     return images.find(img => img.id === imageId);
   }, [images]);
 
-  const refreshImages = useCallback(() => {
-    setHasLoaded(false);
-    fetchImages();
-  }, [fetchImages]);
+  const refreshImages = useCallback(async () => {
+    console.log('refreshImages called - starting refresh...');
+    
+    // Abort any ongoing thumbnail loading
+    if (abortController.current) {
+      abortController.current.abort();
+    }
+    
+    setLoading(true);
+    setError(null);
+    
+    try {
+      console.log('Cleaning up thumbnails...');
+      // Clean up any corrupted thumbnails first
+      await cleanupThumbnails();
+      
+      if (sessionId) {
+        // Online mode - fetch from server
+        console.log('Online mode: fetching images from server...');
+        const response = await apiService.listImages("", 3, "Name", false, sessionId || undefined);
+        console.log(`Received ${response.files.length} files from server`);
+        
+        setAllImageFiles(response.files);
+        const firstPageFiles = response.files.slice(0, ITEMS_PER_PAGE);
+        const imageObjects = processImageFiles(firstPageFiles);
+        console.log(`Processing ${imageObjects.length} image objects`);
+        
+        // Load cached thumbnails for existing images
+        console.log('Loading cached thumbnails...');
+        const imagesWithCachedThumbnails = await Promise.all(
+          imageObjects.map(async (image) => {
+            const safeId = image.id.replace(/[^a-zA-Z0-9-_]/g, '_');
+            const docDir = FileSystem.documentDirectory;
+            if (!docDir) {
+              return { ...image, imageData: undefined, thumbnailUri: undefined };
+            }
+            
+            // Check if we have a cached JPG thumbnail
+            const thumbnailsDir = `${docDir}thumbnails`;
+            const cachedThumbPath = `${thumbnailsDir}/thumb_${safeId}.jpg`;
+            
+            // Check if cached thumbnail exists
+            const cachedThumbInfo = await FileSystem.getInfoAsync(cachedThumbPath);
+            if (cachedThumbInfo.exists && cachedThumbInfo.size > 0) {
+              console.log(`Found cached thumbnail for: ${image.filename}`);
+              return { ...image, imageData: undefined, thumbnailUri: cachedThumbPath, thumbnailFailed: false };
+            }
+            
+            // No cached thumbnail found
+            console.log(`No cached thumbnail for: ${image.filename}`);
+            return { ...image, imageData: undefined, thumbnailUri: undefined };
+          })
+        );
+        
+        console.log(`Setting ${imagesWithCachedThumbnails.length} images with cached thumbnails`);
+        setImages(imagesWithCachedThumbnails);
+        setCurrentPage(0);
+        setHasMore(response.files.length > ITEMS_PER_PAGE);
+        setHasLoaded(true);
+        
+        // Queue thumbnails for loading one by one (only for images without cached thumbnails)
+        const imagesNeedingThumbnails = imageObjects.filter((_, index) => !imagesWithCachedThumbnails[index].thumbnailUri);
+        console.log(`${imagesNeedingThumbnails.length} images need thumbnail creation`);
+        
+        if (imagesNeedingThumbnails.length > 0) {
+          console.log('Queueing thumbnail creation for missing thumbnails...');
+          queueThumbnails(imagesNeedingThumbnails, 0);
+        }
+      } else {
+        // Offline mode - reload cached images
+        console.log('Offline mode: reloading cached images...');
+        const docDir = FileSystem.documentDirectory;
+        if (!docDir) {
+          setImages([]);
+          setHasLoaded(true);
+          return;
+        }
+        
+        const thumbnailsDir = `${docDir}thumbnails`;
+        const dirInfo = await FileSystem.getInfoAsync(thumbnailsDir);
+        
+        if (!dirInfo.exists) {
+          console.log('No thumbnails directory found in offline mode');
+          setImages([]);
+          setHasLoaded(true);
+          return;
+        }
+        
+        // Get all cached thumbnail files
+        const thumbnailFiles = await FileSystem.readDirectoryAsync(thumbnailsDir);
+        const jpgThumbnails = thumbnailFiles.filter(file => file.endsWith('.jpg'));
+        
+        console.log(`Found ${jpgThumbnails.length} cached thumbnails in offline mode`);
+        
+        // Create image objects from cached thumbnails
+        const cachedImages = jpgThumbnails.map((thumbnailFile, index) => {
+          // Extract filename from thumbnail name (remove 'thumb_' prefix and '.jpg' suffix)
+          const filename = thumbnailFile.replace(/^thumb_/, '').replace(/\.jpg$/, '');
+          
+          return {
+            id: `cached_${index}_${Date.now()}`,
+            url: `file://${thumbnailsDir}/${thumbnailFile}`,
+            filename: filename,
+            prompt: 'Cached image',
+            negativePrompt: '',
+            steps: 0,
+            seed: 0,
+            cfgscale: 0,
+            width: 0,
+            height: 0,
+            sampler: '',
+            scheduler: '',
+            model: '',
+            modelFile: '',
+            date: new Date().toISOString(),
+            timestamp: new Date(),
+            thumbnailUri: `file://${thumbnailsDir}/${thumbnailFile}`,
+            thumbnailFailed: false,
+            imageData: undefined,
+          };
+        });
+        
+        setImages(cachedImages);
+        setAllImageFiles([]);
+        setCurrentPage(0);
+        setHasMore(false);
+        setHasLoaded(true);
+      }
+      
+      console.log('Refresh completed successfully');
+      
+    } catch (err) {
+      console.error('Failed to refresh images:', err);
+      // Don't show timeout or network errors to the user
+      if (err instanceof Error) {
+        if (err.message.includes('timeout') || err.message.includes('network')) {
+          console.log('Network/timeout error occurred, not showing to user');
+          // Don't set error state for timeout/network issues
+        } else {
+          setError(err.message);
+        }
+      } else {
+        setError('Failed to refresh images');
+      }
+    } finally {
+      setLoading(false);
+      console.log('Refresh loading state set to false');
+    }
+  }, [processImageFiles, sessionId, queueThumbnails]);
 
   const refreshImage = useCallback(async (imageId: string) => {
     const image = images.find(img => img.id === imageId);
@@ -267,13 +566,13 @@ export const useImageHistory = () => {
   // Load imageData for a specific image (for memory optimization)
   const loadImageData = useCallback(async (imageId: string) => {
     const image = images.find(img => img.id === imageId);
-    if (!image || image.thumbnailUri || !image.filename) return;
+    if (!image || image.thumbnailUri || image.thumbnailFailed || !image.filename) return;
 
     const thumbnailUri = await fetchAndCreateThumbnail(image.filename, image.id);
 
     setImages(prev => prev.map(img =>
       img.id === imageId
-        ? { ...img, imageData: undefined, thumbnailUri }
+        ? { ...img, imageData: undefined, thumbnailUri: thumbnailUri || undefined, thumbnailFailed: !thumbnailUri }
         : img
     ));
   }, [images, fetchAndCreateThumbnail]);
@@ -305,7 +604,7 @@ export const useImageHistory = () => {
     loadImageData,
     releaseImageData,
     totalCount: allImageFiles.length,
-    loadedThumbnailCount: images.filter(img => img.thumbnailUri).length,
+    loadedThumbnailCount: images.filter(img => img.thumbnailUri && !img.thumbnailFailed).length,
   };
 };
 

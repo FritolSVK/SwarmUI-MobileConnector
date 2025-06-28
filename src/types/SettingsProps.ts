@@ -1,4 +1,4 @@
 export interface SettingsProps {
-  onClearHistory?: () => void;
+  onClearHistory?: () => Promise<void>;
   onExportData?: () => void;
 } 

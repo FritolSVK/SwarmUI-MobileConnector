@@ -18,5 +18,6 @@ export interface HistoryImage {
   modelFile?: string;
   date?: string;
   thumbnailUri?: string; // Local URI of the 64x64 thumbnail
+  thumbnailFailed?: boolean; // Flag to indicate thumbnail loading failed
   [key: string]: any; // Allow for any additional metadata fields
 } 

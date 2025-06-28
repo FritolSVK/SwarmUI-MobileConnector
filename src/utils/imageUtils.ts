@@ -54,12 +54,17 @@ export async function cleanupThumbnails(): Promise<void> {
     
     // Check if thumbnails directory exists
     const dirInfo = await FileSystem.getInfoAsync(thumbnailsDir);
-    if (!dirInfo.exists) return;
+    if (!dirInfo.exists) {
+      console.log('Thumbnails directory does not exist, nothing to cleanup');
+      return;
+    }
     
     // List all files in thumbnails directory
     const files = await FileSystem.readDirectoryAsync(thumbnailsDir);
+    console.log(`Found ${files.length} files in thumbnails directory`);
     
-    // Check each file and remove corrupted ones
+    // Check each file and remove corrupted ones (only JPG files)
+    let cleanedCount = 0;
     for (const file of files) {
       if (file.endsWith('.jpg')) {
         const filePath = `${thumbnailsDir}/${file}`;
@@ -68,15 +73,21 @@ export async function cleanupThumbnails(): Promise<void> {
           if (fileInfo.exists && fileInfo.size === 0) {
             // Remove empty files
             await FileSystem.deleteAsync(filePath);
-            console.log('Removed empty thumbnail:', file);
+            console.log('Removed empty JPG thumbnail:', file);
+            cleanedCount++;
           }
         } catch (error) {
           // Remove files that can't be accessed
           await FileSystem.deleteAsync(filePath).catch(() => {});
-          console.log('Removed corrupted thumbnail:', file);
+          console.log('Removed corrupted JPG thumbnail:', file);
+          cleanedCount++;
         }
+      } else {
+        console.log(`Skipping non-JPG file: ${file}`);
       }
     }
+    
+    console.log(`Cleanup completed: ${cleanedCount} files removed`);
   } catch (error) {
     console.warn('Failed to cleanup thumbnails:', error);
   }
@@ -86,19 +97,26 @@ export async function cleanupThumbnails(): Promise<void> {
  * Creates a thumbnail from a base64 image and stores it on device.
  * The thumbnail maintains the original aspect ratio and fits within a square.
  * @param imageData The base64 string of the image (data:image/png;base64,...) or URL
- * @param id Unique id for the image (used for filename)
+ * @param safeId Unique safe id for the image (used for filename)
  * @returns The local URI of the stored thumbnail
  */
-export async function createAndStoreThumbnail(imageData: string, id: string): Promise<string> {
+export async function createAndStoreThumbnail(imageData: string, safeId: string): Promise<string> {
+  let tempPath: string | null = null;
+  let thumbPath: string | null = null;
+  
   try {
-    
     // Validate input
     if (!imageData || typeof imageData !== 'string') {
       throw new Error('Invalid image data provided');
     }
     
     let base64 = imageData;
+    let isJpg = false;
+    
+    // Check if the input is already JPG format
     if (base64.startsWith('data:')) {
+      const mimeType = base64.match(/^data:([^;]+);/)?.[1];
+      isJpg = mimeType === 'image/jpeg' || mimeType === 'image/jpg';
       base64 = base64.replace(/^data:[^;]+;base64,/, '');
     }
     if (base64.startsWith('http')) {
@@ -110,9 +128,6 @@ export async function createAndStoreThumbnail(imageData: string, id: string): Pr
       throw new Error('Empty base64 data after processing');
     }
 
-    // Create a safe filename by removing special characters
-    const safeId = id.replace(/[^a-zA-Z0-9-_]/g, '_');
-    
     // Ensure we have valid directories
     const cacheDir = FileSystem.cacheDirectory;
     const docDir = FileSystem.documentDirectory;
@@ -122,56 +137,102 @@ export async function createAndStoreThumbnail(imageData: string, id: string): Pr
     }
     
     // Write the base64 image to a temporary file
-    const tempPath = `${cacheDir}temp_${safeId}.jpg`;
+    tempPath = `${cacheDir}temp_${safeId}.jpg`;
     
     // Ensure the cache directory exists
     await FileSystem.makeDirectoryAsync(cacheDir, { intermediates: true }).catch(() => {});
     
     await FileSystem.writeAsStringAsync(tempPath, base64, { encoding: FileSystem.EncodingType.Base64 });
     
-    // Verify the temp file was created
+    // Verify the temp file was created and wait a moment for file system sync
     const tempFileInfo = await FileSystem.getInfoAsync(tempPath);
     if (!tempFileInfo.exists || tempFileInfo.size === 0) {
       throw new Error('Failed to create temporary image file');
     }
     
-    // Resize to thumbnail size using expo-image-manipulator
-    // First, get the original image dimensions
-    const originalImage = await ImageManipulator.manipulateAsync(
-      tempPath,
-      [], // No operations, just get info
-      { format: ImageManipulator.SaveFormat.JPEG }
-    );
+    // Small delay to ensure file system has synced
+    await new Promise(resolve => setTimeout(resolve, 100));
     
-    // Calculate the resize dimensions to fit within the square while maintaining aspect ratio
-    const maxSize = THUMBNAIL_CONFIG.SIZE;
-    const aspectRatio = originalImage.width / originalImage.height;
-    
-    let resizeWidth, resizeHeight;
-    if (aspectRatio > 1) {
-      // Landscape image
-      resizeWidth = maxSize;
-      resizeHeight = maxSize / aspectRatio;
-    } else {
-      // Portrait or square image
-      resizeWidth = maxSize * aspectRatio;
-      resizeHeight = maxSize;
-    }
-    
-    // Resize the image to fit within the square
-    const manipResult = await ImageManipulator.manipulateAsync(
-      tempPath,
-      [{ 
-        resize: { 
-          width: Math.round(resizeWidth), 
-          height: Math.round(resizeHeight) 
-        } 
-      }],
-      { 
-        compress: THUMBNAIL_CONFIG.COMPRESSION, 
-        format: ImageManipulator.SaveFormat.JPEG 
+    // If the input was already JPG, we can skip the first conversion step
+    let manipResult;
+    if (isJpg) {
+      // Just get dimensions and resize directly
+      const originalImage = await ImageManipulator.manipulateAsync(
+        tempPath,
+        [], // No operations, just get info
+        { format: ImageManipulator.SaveFormat.JPEG }
+      );
+      
+      // Calculate the resize dimensions to fit within the square while maintaining aspect ratio
+      const maxSize = THUMBNAIL_CONFIG.SIZE;
+      const aspectRatio = originalImage.width / originalImage.height;
+      
+      let resizeWidth, resizeHeight;
+      if (aspectRatio > 1) {
+        // Landscape image
+        resizeWidth = maxSize;
+        resizeHeight = maxSize / aspectRatio;
+      } else {
+        // Portrait or square image
+        resizeWidth = maxSize * aspectRatio;
+        resizeHeight = maxSize;
       }
-    );
+      
+      // Resize the image to fit within the square
+      manipResult = await ImageManipulator.manipulateAsync(
+        tempPath,
+        [{ 
+          resize: { 
+            width: Math.round(resizeWidth), 
+            height: Math.round(resizeHeight) 
+          } 
+        }],
+        { 
+          compress: THUMBNAIL_CONFIG.COMPRESSION, 
+          format: ImageManipulator.SaveFormat.JPEG 
+        }
+      );
+    } else {
+      // Original logic for PNG to JPG conversion
+      const originalImage = await ImageManipulator.manipulateAsync(
+        tempPath,
+        [], // No operations, just get info and convert to JPG
+        { 
+          format: ImageManipulator.SaveFormat.JPEG,
+          compress: THUMBNAIL_CONFIG.COMPRESSION
+        }
+      );
+      
+      // Calculate the resize dimensions to fit within the square while maintaining aspect ratio
+      const maxSize = THUMBNAIL_CONFIG.SIZE;
+      const aspectRatio = originalImage.width / originalImage.height;
+      
+      let resizeWidth, resizeHeight;
+      if (aspectRatio > 1) {
+        // Landscape image
+        resizeWidth = maxSize;
+        resizeHeight = maxSize / aspectRatio;
+      } else {
+        // Portrait or square image
+        resizeWidth = maxSize * aspectRatio;
+        resizeHeight = maxSize;
+      }
+      
+      // Resize the image to fit within the square and ensure JPG format
+      manipResult = await ImageManipulator.manipulateAsync(
+        tempPath,
+        [{ 
+          resize: { 
+            width: Math.round(resizeWidth), 
+            height: Math.round(resizeHeight) 
+          } 
+        }],
+        { 
+          compress: THUMBNAIL_CONFIG.COMPRESSION, 
+          format: ImageManipulator.SaveFormat.JPEG 
+        }
+      );
+    }
     
     // Verify the manipulated result
     if (!manipResult.uri) {
@@ -182,8 +243,8 @@ export async function createAndStoreThumbnail(imageData: string, id: string): Pr
     const thumbnailsDir = `${docDir}thumbnails`;
     await FileSystem.makeDirectoryAsync(thumbnailsDir, { intermediates: true }).catch(() => {});
     
-    // Save the thumbnail to a permanent location with safe filename
-    const thumbPath = `${thumbnailsDir}/thumb_${safeId}.jpg`;
+    // Save the thumbnail to a permanent location with safe filename (always as JPG)
+    thumbPath = `${thumbnailsDir}/thumb_${safeId}.jpg`;
     
     // Use moveAsync instead of copyAsync for better reliability
     await FileSystem.moveAsync({ from: manipResult.uri, to: thumbPath });
@@ -194,13 +255,33 @@ export async function createAndStoreThumbnail(imageData: string, id: string): Pr
       throw new Error('Failed to create thumbnail file');
     }
     
-    // Clean up temp file if it still exists
-    await FileSystem.deleteAsync(tempPath, { idempotent: true }).catch(() => {});
-    
     return thumbPath;
   } catch (error) {
+    // Log the error but don't throw it if it's a non-critical file system error
+    if (error instanceof Error && (
+      error.message.includes("The file") && error.message.includes("couldn't be opened") ||
+      error.message.includes("file is not readable") ||
+      error.message.includes("Error decoding image data")
+    )) {
+      console.warn('Non-critical file system error during thumbnail creation:', error.message);
+      // If we have a thumbnail path, try to return it even if there were non-critical errors
+      if (thumbPath) {
+        const thumbFileInfo = await FileSystem.getInfoAsync(thumbPath);
+        if (thumbFileInfo.exists && thumbFileInfo.size > 0) {
+          console.log('Thumbnail was created successfully despite non-critical error, returning path');
+          return thumbPath;
+        }
+      }
+      // If no thumbnail path or file doesn't exist, return empty string
+      return '';
+    }
+    
     console.warn('Failed to create thumbnail:', error);
-    // Return a fallback or throw the error depending on your needs
     throw error;
+  } finally {
+    // Clean up temp file if it exists
+    if (tempPath) {
+      await FileSystem.deleteAsync(tempPath, { idempotent: true }).catch(() => {});
+    }
   }
 } 

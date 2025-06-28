@@ -66,9 +66,9 @@ export default function ImageHistory({
 
   const onViewableItemsChanged = useCallback(({ viewableItems, changed }: { viewableItems: ViewToken[], changed: ViewToken[] }) => {
     const newVisibleIds = new Set(viewableItems.map(v => v.item.id));
-    // Load imageData for newly visible images
+    // Load imageData for newly visible images (but not failed ones)
     viewableItems.forEach(v => {
-      if (loadImageData && v.item.id && !v.item.imageData) {
+      if (loadImageData && v.item.id && !v.item.imageData && !v.item.thumbnailFailed) {
         loadImageData(v.item.id);
       }
     });
@@ -100,7 +100,8 @@ export default function ImageHistory({
   };
 
   const renderImageTile: ListRenderItem<HistoryImage> = ({ item, index }) => {
-    const isImageLoading = !item.thumbnailUri;
+    const isImageLoading = !item.thumbnailUri && !item.thumbnailFailed;
+    const isImageFailed = item.thumbnailFailed;
     
     const handleImageError = () => {
       console.warn('Failed to load thumbnail for image:', item.id);
@@ -119,6 +120,10 @@ export default function ImageHistory({
           {isImageLoading ? (
             <View style={[ImageHistoryStyles.imageLoadingContainer, { backgroundColor: theme.panel }]}> 
               <ActivityIndicator size="small" color={theme.accent} />
+            </View>
+          ) : isImageFailed ? (
+            <View style={[ImageHistoryStyles.imageFailedContainer, { backgroundColor: theme.panel }]}>
+              <Text style={[ImageHistoryStyles.failedText, { color: theme.secondaryText }]}>✕</Text>
             </View>
           ) : (
             <Image
@@ -192,7 +197,12 @@ export default function ImageHistory({
         ListFooterComponent={renderLoadMoreIndicator}
         ListEmptyComponent={renderEmptyComponent}
         refreshing={false}
-        onRefresh={onRefresh}
+        onRefresh={() => {
+          console.log('ImageHistory: onRefresh triggered from FlatList');
+          if (onRefresh) {
+            onRefresh();
+          }
+        }}
         showsVerticalScrollIndicator={false}
         onViewableItemsChanged={onViewableItemsChanged}
         viewabilityConfig={{ itemVisiblePercentThreshold: 50 }}

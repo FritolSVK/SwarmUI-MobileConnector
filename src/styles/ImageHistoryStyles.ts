@@ -123,6 +123,18 @@ const ImageHistoryStyles = StyleSheet.create({
     alignItems: 'center',
     backgroundColor: lightTheme.gray[100],
   },
+  imageFailedContainer: {
+    width: 120,
+    height: 120,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: lightTheme.gray[100],
+  },
+  failedText: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: lightTheme.gray[400],
+  },
   imageLoadingText: {
     fontSize: 12,
     color: lightTheme.gray[600],

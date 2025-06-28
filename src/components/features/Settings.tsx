@@ -10,13 +10,26 @@ export default function Settings({ onClearHistory, onExportData }: SettingsProps
   const { sessionId, isLoading: sessionLoading, error: sessionError, refreshSession } = useSession();
   const [swarmBaseUrl, setSwarmBaseUrl] = useState('http://192.168.1.100:7801');
 
-  const handleClearHistory = () => {
+  const handleClearHistory = async () => {
     Alert.alert(
       'Clear History',
-      'Are you sure you want to clear all image history? This action cannot be undone.',
+      'Are you sure you want to clear all image history and thumbnails? This action cannot be undone.',
       [
         { text: 'Cancel', style: 'cancel' },
-        { text: 'Clear', style: 'destructive', onPress: onClearHistory },
+        { 
+          text: 'Clear', 
+          style: 'destructive', 
+          onPress: async () => {
+            try {
+              if (onClearHistory) {
+                await onClearHistory();
+              }
+            } catch (error) {
+              console.error('Failed to clear history:', error);
+              Alert.alert('Error', 'Failed to clear history. Please try again.');
+            }
+          }
+        },
       ]
     );
   };
@@ -110,7 +123,7 @@ export default function Settings({ onClearHistory, onExportData }: SettingsProps
         
         {renderSettingItem({
           title: 'Clear History',
-          subtitle: 'Remove all generated images from history',
+          subtitle: 'Remove all generated images from history and clear cached thumbnails',
           type: 'button',
           buttonText: 'Clear',
           onValueChange: handleClearHistory,

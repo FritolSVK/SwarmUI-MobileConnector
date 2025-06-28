@@ -165,6 +165,7 @@ export default function HomeScreen() {
       width,
       height,
     });
+    console.log('handleGenerateImage: calling refreshImages...');
     refreshImages();
   };
 
@@ -274,7 +275,10 @@ export default function HomeScreen() {
             loadingMore={historyLoadingMore}
             hasMore={sessionId ? historyHasMore : false}
             error={historyError}
-            onRefresh={sessionId ? refreshImages : undefined}
+            onRefresh={() => {
+              console.log('HomeScreen: onRefresh called, sessionId:', !!sessionId);
+              refreshImages();
+            }}
             onRefreshImage={refreshImage}
             onLoadMore={sessionId ? loadMoreImages : undefined}
             loadImageData={loadImageData}
