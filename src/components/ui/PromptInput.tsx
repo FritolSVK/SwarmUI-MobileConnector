@@ -39,8 +39,9 @@ export default function PromptInput({ prompt, setPrompt, onGenerate, loading, ge
         placeholder="Enter your prompt here..."
         placeholderTextColor={theme.secondaryText}
         multiline
-        numberOfLines={3}
         editable={!disabled}
+        returnKeyType="done"
+        blurOnSubmit={true}
       />
       <View style={PromptInputStyles.buttonContainer}>
         <TouchableOpacity

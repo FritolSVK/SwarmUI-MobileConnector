@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Animated, Text, View, useWindowDimensions } from 'react-native';
+import { Animated, Keyboard, KeyboardAvoidingView, Platform, Text, TouchableWithoutFeedback, View, useWindowDimensions } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { ImageHistory, ImageViewer, NavigationHeader, PromptInput, Settings } from '../components';
 import { NavigationTab } from '../components/features/NavigationHeader';
@@ -207,8 +207,8 @@ export default function HomeScreen() {
   };
 
   const renderMainContent = () => (
-    <View style={HomeScreenStyles.verticalColumn}>
-      <View style={[HomeScreenStyles.imageWrapper, { height: imageAreaHeight }]}> 
+    <View style={[HomeScreenStyles.verticalColumn, { justifyContent: 'space-between' }]}>
+      <View style={[HomeScreenStyles.imageWrapper, { height: imageAreaHeight, flex: 1 }]}> 
         <ImageViewer
           imageUrl={imageUrl}
           loading={loading}
@@ -248,14 +248,16 @@ export default function HomeScreen() {
           setShowResolution={setShowResolution}
         />
       </Animated.View>
-      <PromptInput
-        prompt={prompt}
-        setPrompt={setPrompt}
-        onGenerate={handleGenerateImage}
-        loading={!sessionId || false}
-        generationStatus={renderSimpleStatus()}
-        disabled={!sessionId}
-      />
+      <View >
+        <PromptInput
+          prompt={prompt}
+          setPrompt={setPrompt}
+          onGenerate={handleGenerateImage}
+          loading={!sessionId || false}
+          generationStatus={renderSimpleStatus()}
+          disabled={!sessionId}
+        />
+      </View>
     </View>
   );
 
@@ -293,6 +295,10 @@ export default function HomeScreen() {
     }
   };
 
+  const dismissKeyboard = () => {
+    Keyboard.dismiss();
+  };
+
   return (
     <SafeAreaView style={[HomeScreenStyles.container, { backgroundColor: theme.background }]} edges={['top', 'left', 'right']}>
       <SessionStatusBanner />
@@ -301,9 +307,17 @@ export default function HomeScreen() {
         onTabChange={setActiveTab}
         galleryCount={loadedThumbnailCount}
       />
-      <View style={{ flex: 1, paddingTop: 36 }}>
-        {renderContent()}
-      </View>
+      <KeyboardAvoidingView 
+        style={{ flex: 1 }} 
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 60 : 100}
+      >
+        <TouchableWithoutFeedback onPress={dismissKeyboard}>
+          <View style={{ flex: 1, paddingTop: 36 }}>
+            {renderContent()}
+          </View>
+        </TouchableWithoutFeedback>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
