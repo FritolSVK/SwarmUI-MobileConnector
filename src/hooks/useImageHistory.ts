@@ -6,17 +6,17 @@ import { apiService } from '../services/api';
 import { HistoryImage } from '../types/HistoryImage';
 import { cleanupThumbnails, createAndStoreThumbnail } from '../utils/imageUtils';
 import {
-    cleanupOrphanedMetadata,
-    clearAllThumbnails,
-    debugCachedImagesMetadata,
-    debugImageArray,
-    forceRefreshMetadata,
-    generateCachedImageId,
-    listAllThumbnails,
-    loadCachedImagesMetadata,
-    metadataToHistoryImage,
-    removeDuplicateImages,
-    sortImagesByDate
+  cleanupOrphanedMetadata,
+  clearAllThumbnails,
+  debugCachedImagesMetadata,
+  debugImageArray,
+  forceRefreshMetadata,
+  generateCachedImageId,
+  listAllThumbnails,
+  loadCachedImagesMetadata,
+  metadataToHistoryImage,
+  removeDuplicateImages,
+  sortImagesByDate
 } from '../utils/storage';
 
 // Helper to strip leading "raw/" if present
@@ -220,6 +220,11 @@ export const useImageHistory = () => {
 
   const fetchImages = useCallback(async () => {
     if (hasLoaded) return; // Don't fetch again if already loaded
+    
+    // Strategy: Use server images when available (preserving listImages order)
+    // Fall back to cached images only when offline (no session)
+    // This ensures the correct order from the server is maintained
+    
     setLoading(true);
     setError(null);
     try {
@@ -351,6 +356,26 @@ export const useImageHistory = () => {
         console.log('Online mode: fetching image list from server...');
         const response = await apiService.listImages("", 3, "Name", false, sessionId || undefined);
         console.log(`Received ${response.files.length} files from server`);
+        
+        // Print detailed response information for refresh
+        console.log('=== listImages Response Details (Refresh) ===');
+        console.log('Response structure:', JSON.stringify(response, null, 2));
+        console.log(`Folders count: ${response.folders?.length || 0}`);
+        if (response.folders && response.folders.length > 0) {
+          console.log('Folders:', response.folders);
+        }
+        console.log(`Files count: ${response.files?.length || 0}`);
+        if (response.files && response.files.length > 0) {
+          console.log('First 5 files:');
+          response.files.slice(0, 5).forEach((file, index) => {
+            console.log(`  ${index + 1}. src: ${file.src}, metadata: ${file.metadata || 'none'}`);
+          });
+          if (response.files.length > 5) {
+            console.log(`  ... and ${response.files.length - 5} more files`);
+          }
+        }
+        console.log('=== End listImages Response Details (Refresh) ===');
+        
         setAllImageFiles(response.files);
         
         // Load the first page of server images automatically
@@ -362,34 +387,22 @@ export const useImageHistory = () => {
           // Debug server images
           debugImageArray(imageObjects, 'Server images before combining');
           
-          // Add server images to the existing cached images
+          // When we have server images, use only those to preserve the exact order from listImages
+          // Don't combine with cached images as this messes up the server order
           const imagesWithLoadingStates = imageObjects.map((image) => ({
             ...image,
             imageData: undefined,
             thumbnailUri: undefined, // This will trigger loading state
           }));
           
-          setImages(prev => {
-            const newImages = [...prev, ...imagesWithLoadingStates];
-            // Remove duplicates and sort all images by date (newest first) to ensure proper ordering
-            const uniqueImages = removeDuplicateImages(newImages);
-            const sortedImages = sortImagesByDate(uniqueImages);
-            
-            // Debug combined images
-            debugImageArray(newImages, 'Combined images before deduplication');
-            debugImageArray(uniqueImages, 'Combined images after deduplication');
-            debugImageArray(sortedImages, 'Final sorted images');
-            
-            console.log(`Combined ${prev.length} cached + ${imagesWithLoadingStates.length} server images, removed ${newImages.length - uniqueImages.length} duplicates, sorted ${sortedImages.length} unique images by date`);
-            if (sortedImages.length > 0) {
-              const oldest = sortedImages[sortedImages.length - 1].timestamp;
-              const newest = sortedImages[0].timestamp;
-              console.log(`Final image date range: ${oldest.toISOString()} to ${newest.toISOString()}`);
-            }
-            // Queue thumbnails for loading one by one
-            queueThumbnails(imageObjects, prev.length);
-            return sortedImages;
-          });
+          // Debug server images
+          debugImageArray(imagesWithLoadingStates, 'Server images (preserving order)');
+          
+          console.log(`Using ${imagesWithLoadingStates.length} server images in original order from listImages response`);
+          
+          // Queue thumbnails for loading one by one
+          queueThumbnails(imageObjects, 0);
+          setImages(imagesWithLoadingStates);
           setCurrentPage(0);
           setHasMore(response.files.length > ITEMS_PER_PAGE); // Enable load more button if there are more images
         } else {
@@ -446,9 +459,9 @@ export const useImageHistory = () => {
       }));
       setImages(prev => {
         const newImages = [...prev, ...imagesWithLoadingStates];
-        // Remove duplicates and sort all images by date (newest first) to maintain proper ordering
-        const uniqueImages = removeDuplicateImages(newImages);
-        return sortImagesByDate(uniqueImages);
+        // Preserve server order - don't remove duplicates or re-sort
+        // The server images come in the correct order from listImages
+        return newImages;
       });
       setCurrentPage(nextPage);
       setHasMore(endIndex < allImageFiles.length);
@@ -663,34 +676,22 @@ export const useImageHistory = () => {
           // Debug server images
           debugImageArray(imageObjects, 'Server images before combining');
           
-          // Add server images to the existing cached images
+          // When we have server images, use only those to preserve the exact order from listImages
+          // Don't combine with cached images as this messes up the server order
           const imagesWithLoadingStates = imageObjects.map((image) => ({
             ...image,
             imageData: undefined,
             thumbnailUri: undefined, // This will trigger loading state
           }));
           
-          setImages(prev => {
-            const newImages = [...prev, ...imagesWithLoadingStates];
-            // Remove duplicates and sort all images by date (newest first) to ensure proper ordering
-            const uniqueImages = removeDuplicateImages(newImages);
-            const sortedImages = sortImagesByDate(uniqueImages);
-            
-            // Debug combined images
-            debugImageArray(newImages, 'Combined images before deduplication');
-            debugImageArray(uniqueImages, 'Combined images after deduplication');
-            debugImageArray(sortedImages, 'Final sorted images');
-            
-            console.log(`Combined ${prev.length} cached + ${imagesWithLoadingStates.length} server images, removed ${newImages.length - uniqueImages.length} duplicates, sorted ${sortedImages.length} unique images by date`);
-            if (sortedImages.length > 0) {
-              const oldest = sortedImages[sortedImages.length - 1].timestamp;
-              const newest = sortedImages[0].timestamp;
-              console.log(`Final image date range: ${oldest.toISOString()} to ${newest.toISOString()}`);
-            }
-            // Queue thumbnails for loading one by one
-            queueThumbnails(imageObjects, prev.length);
-            return sortedImages;
-          });
+          // Debug server images
+          debugImageArray(imagesWithLoadingStates, 'Server images (preserving order)');
+          
+          console.log(`Using ${imagesWithLoadingStates.length} server images in original order from listImages response`);
+          
+          // Queue thumbnails for loading one by one
+          queueThumbnails(imageObjects, 0);
+          setImages(imagesWithLoadingStates);
           setCurrentPage(0);
           setHasMore(response.files.length > ITEMS_PER_PAGE); // Enable load more button if there are more images
         } else {
