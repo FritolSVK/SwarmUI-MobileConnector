@@ -6,13 +6,13 @@ import { apiService } from '../services/api';
 import { HistoryImage } from '../types/HistoryImage';
 import { cleanupThumbnails, createAndStoreThumbnail } from '../utils/imageUtils';
 import {
-  clearAllThumbnails,
-  debugCachedImagesMetadata,
-  generateCachedImageId,
-  listAllThumbnails,
-  loadCachedImagesMetadata,
-  metadataToHistoryImage,
-  sortImagesByDate
+    clearAllThumbnails,
+    debugCachedImagesMetadata,
+    generateCachedImageId,
+    listAllThumbnails,
+    loadCachedImagesMetadata,
+    metadataToHistoryImage,
+    sortImagesByDate
 } from '../utils/storage';
 
 // Helper to strip leading "raw/" if present
@@ -658,13 +658,21 @@ export const useImageHistory = () => {
     const image = images.find(img => img.id === imageId);
     if (!image || !image.filename) return;
 
+    // Fetch fresh image data and recreate thumbnail
     const imageData = await fetchImageData(image.filename);
+    const thumbnailUri = await fetchAndCreateThumbnail(image.filename, image.id, image);
+
     setImages(prev => prev.map(img => 
       img.id === imageId 
-        ? { ...img, imageData: imageData || undefined }
+        ? { 
+            ...img, 
+            imageData: imageData || undefined,
+            thumbnailUri: thumbnailUri || undefined,
+            thumbnailFailed: !thumbnailUri
+          }
         : img
     ));
-  }, [images, fetchImageData]);
+  }, [images, fetchImageData, fetchAndCreateThumbnail]);
 
   // Load imageData for a specific image (for memory optimization)
   const loadImageData = useCallback(async (imageId: string) => {

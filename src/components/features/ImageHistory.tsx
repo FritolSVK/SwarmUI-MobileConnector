@@ -176,8 +176,11 @@ export default function ImageHistory({
         <Text style={[ImageHistoryStyles.errorText, { color: theme.secondaryText }]}>Failed to load images</Text>
         <Text style={[ImageHistoryStyles.errorSubtext, { color: theme.text }]}>{error}</Text>
         {onRefresh && (
-          <TouchableOpacity style={ImageHistoryStyles.retryButton} onPress={onRefresh}>
-            <Text style={[ImageHistoryStyles.retryButtonText, { color: theme.text }]}>Retry</Text>
+          <TouchableOpacity 
+            style={[ImageHistoryStyles.retryButton, { backgroundColor: theme.accent }]} 
+            onPress={onRefresh}
+          >
+            <Text style={[ImageHistoryStyles.retryButtonText, { color: theme.background }]}>Retry</Text>
           </TouchableOpacity>
         )}
       </View>
@@ -254,6 +257,20 @@ export default function ImageHistory({
                 side="center"
                 onPress={() => { setShowBottomPanel(prev => !prev); }}
               />
+              {onRefreshImage && selectedImage?.id && (
+                <TouchableOpacity
+                  style={[
+                    ImageHistoryStyles.reloadButton,
+                    { backgroundColor: theme.buttonBackground, borderColor: theme.border, borderWidth: 1 }
+                  ]}
+                  onPress={() => onRefreshImage(selectedImage.id)}
+                  activeOpacity={0.7}
+                >
+                  <Text style={[ImageHistoryStyles.reloadButtonText, { color: theme.accent }]}>
+                    ↻
+                  </Text>
+                </TouchableOpacity>
+              )}
             </View>
             {selectedImage && showBottomPanel && (
               <View

@@ -1,10 +1,8 @@
 import { Dimensions, StyleSheet } from 'react-native';
-import { lightTheme } from '../constants/colors';
 
 const ImageHistoryStyles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: lightTheme.white,
   },
   scrollView: {
     flex: 1,
@@ -21,7 +19,6 @@ const ImageHistoryStyles = StyleSheet.create({
   },
   imageTile: {
     width: 120,
-    backgroundColor: lightTheme.gray[100],
     borderRadius: 8,
     overflow: 'hidden',
   },
@@ -41,13 +38,11 @@ const ImageHistoryStyles = StyleSheet.create({
   },
   promptText: {
     fontSize: 12,
-    color: lightTheme.gray[700],
     marginBottom: 4,
     lineHeight: 16,
   },
   timestampText: {
     fontSize: 10,
-    color: lightTheme.gray[600],
   },
   emptyContainer: {
     flex: 1,
@@ -58,12 +53,10 @@ const ImageHistoryStyles = StyleSheet.create({
   emptyText: {
     fontSize: 18,
     fontWeight: '600',
-    color: lightTheme.gray[600],
     marginBottom: 8,
   },
   emptySubtext: {
     fontSize: 14,
-    color: lightTheme.gray[500],
     textAlign: 'center',
   },
   fullScreenModal: {
@@ -84,7 +77,6 @@ const ImageHistoryStyles = StyleSheet.create({
   loadingText: {
     fontSize: 18,
     fontWeight: '600',
-    color: lightTheme.gray[600],
     marginTop: 16,
   },
   errorContainer: {
@@ -96,23 +88,19 @@ const ImageHistoryStyles = StyleSheet.create({
   errorText: {
     fontSize: 18,
     fontWeight: '600',
-    color: lightTheme.gray[600],
     marginBottom: 8,
   },
   errorSubtext: {
     fontSize: 14,
-    color: lightTheme.gray[500],
     textAlign: 'center',
   },
   retryButton: {
-    backgroundColor: lightTheme.primary,
     paddingHorizontal: 20,
     paddingVertical: 10,
     borderRadius: 8,
     marginTop: 16,
   },
   retryButtonText: {
-    color: lightTheme.white,
     fontSize: 16,
     fontWeight: '600',
   },
@@ -121,23 +109,19 @@ const ImageHistoryStyles = StyleSheet.create({
     height: 120,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: lightTheme.gray[100],
   },
   imageFailedContainer: {
     width: 120,
     height: 120,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: lightTheme.gray[100],
   },
   failedText: {
     fontSize: 24,
     fontWeight: 'bold',
-    color: lightTheme.gray[400],
   },
   imageLoadingText: {
     fontSize: 12,
-    color: lightTheme.gray[600],
     marginTop: 8,
   },
   loadMoreContainer: {
@@ -147,7 +131,6 @@ const ImageHistoryStyles = StyleSheet.create({
   },
   loadMoreText: {
     fontSize: 12,
-    color: lightTheme.gray[600],
   },
   loadMoreButton: {
     paddingHorizontal: 20,
@@ -173,24 +156,20 @@ const ImageHistoryStyles = StyleSheet.create({
   },
   parameterList: {
     padding: 16,
-    backgroundColor: lightTheme.white,
     borderTopLeftRadius: 16,
     borderTopRightRadius: 16,
   },
   parameterItem: {
     fontSize: 14,
-    color: lightTheme.gray[700],
     marginBottom: 8,
   },
   parameterLabel: {
     fontSize: 12,
     fontWeight: '600',
-    color: lightTheme.gray[600],
     marginRight: 8,
   },
   modalContent: {
     flex: 1,
-    // backgroundColor will be set from the component using theme
     paddingTop: 0,
   },
   modalScrollWrapper: {
@@ -203,22 +182,18 @@ const ImageHistoryStyles = StyleSheet.create({
     width: '100%',
     justifyContent: 'center',
     alignItems: 'center',
-    // backgroundColor will be set from the component using theme if needed
   },
   modalImage: {
     width: '100%',
     height: undefined,
     flex: 1,
-    // backgroundColor will be set from the component using theme if needed
   },
   parameterListBottom: {
     width: '100%',
-    // backgroundColor will be set from the component using theme
     borderTopLeftRadius: 16,
     borderTopRightRadius: 16,
     padding: 20,
     paddingBottom: 32,
-    shadowColor: lightTheme.shadow,
     shadowOffset: { width: 0, height: -2 },
     shadowOpacity: 0.1,
     shadowRadius: 8,
@@ -233,10 +208,8 @@ const ImageHistoryStyles = StyleSheet.create({
   },
   parameterItemInline: {
     fontSize: 14,
-    color: lightTheme.gray[700],
     marginRight: 24,
   },
-  // New styles for inline styles
   modalCloseButton: {
     position: 'absolute',
     top: 60,
@@ -264,6 +237,26 @@ const ImageHistoryStyles = StyleSheet.create({
     marginTop: 8,
     marginBottom: 0,
     zIndex: 10,
+  },
+  reloadButton: {
+    position: 'absolute',
+    right: 24,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.25,
+    shadowRadius: 3.84,
+    elevation: 5,
+  },
+  reloadButtonText: {
+    fontSize: 16,
+    fontWeight: 'bold',
   },
   offlineModeContainer: {
     margin: 16,
