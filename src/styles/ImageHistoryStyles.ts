@@ -149,6 +149,18 @@ const ImageHistoryStyles = StyleSheet.create({
     fontSize: 12,
     color: lightTheme.gray[600],
   },
+  loadMoreButton: {
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderRadius: 8,
+    minWidth: 140,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  loadMoreButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+  },
   fullScreenModalTop: {
     flex: 1,
     backgroundColor: 'rgba(0, 0, 0, 0.9)',
@@ -183,7 +195,7 @@ const ImageHistoryStyles = StyleSheet.create({
   },
   modalScrollWrapper: {
     flex: 1,
-    alignItems: 'stretch',
+    alignItems: 'center',
     justifyContent: 'flex-start',
   },
   modalImageWrapper: {
@@ -247,6 +259,8 @@ const ImageHistoryStyles = StyleSheet.create({
   },
   arrowButtonContainer: {
     alignItems: 'center',
+    justifyContent: 'center',
+    width: '100%',
     marginTop: 8,
     marginBottom: 0,
     zIndex: 10,

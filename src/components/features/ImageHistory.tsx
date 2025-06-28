@@ -149,7 +149,15 @@ export default function ImageHistory({
             <Text style={ImageHistoryStyles.loadMoreText}>Loading more images...</Text>
           </>
         ) : (
-          <Text style={ImageHistoryStyles.loadMoreText}>Scroll to load more</Text>
+          <TouchableOpacity 
+            style={[ImageHistoryStyles.loadMoreButton, { backgroundColor: theme.accent }]}
+            onPress={onLoadMore}
+            disabled={loadingMore}
+          >
+            <Text style={[ImageHistoryStyles.loadMoreButtonText, { color: theme.background }]}>
+              Load More Images
+            </Text>
+          </TouchableOpacity>
         )}
       </View>
     );
@@ -192,8 +200,6 @@ export default function ImageHistory({
         numColumns={3}
         columnWrapperStyle={ImageHistoryStyles.flatListColumnWrapper}
         contentContainerStyle={[ImageHistoryStyles.scrollContent, { backgroundColor: theme.background }]}
-        onEndReached={hasMore && !loadingMore && !isLoadingThumbnails ? onLoadMore : undefined}
-        onEndReachedThreshold={0.5}
         ListFooterComponent={renderLoadMoreIndicator}
         ListEmptyComponent={renderEmptyComponent}
         refreshing={false}
@@ -245,6 +251,7 @@ export default function ImageHistory({
             <View style={ImageHistoryStyles.arrowButtonContainer}>
               <ArrowButton
                 direction={showBottomPanel ? 'down' : 'up'}
+                side="center"
                 onPress={() => { setShowBottomPanel(prev => !prev); }}
               />
             </View>

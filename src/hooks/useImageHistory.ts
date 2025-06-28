@@ -214,87 +214,94 @@ export const useImageHistory = () => {
       // Clean up any corrupted thumbnails first
       await cleanupThumbnails();
       
-      if (sessionId) {
-        // Online mode - fetch from server
-        console.log('Online mode: fetching images from server');
-        const response = await apiService.listImages("", 3, "Name", false, sessionId || undefined);
-        setAllImageFiles(response.files);
-        const firstPageFiles = response.files.slice(0, ITEMS_PER_PAGE);
-        const imageObjects = processImageFiles(firstPageFiles);
-        
-        // Set images immediately with loading states (no thumbnails yet)
-        const imagesWithLoadingStates = imageObjects.map((image) => ({
-          ...image,
-          imageData: undefined,
-          thumbnailUri: undefined, // This will trigger loading state
-        }));
-        setImages(imagesWithLoadingStates);
-        setCurrentPage(0);
-        setHasMore(response.files.length > ITEMS_PER_PAGE);
-        setHasLoaded(true);
-        
-        // Queue thumbnails for loading one by one
-        queueThumbnails(imageObjects, 0);
-      } else {
-        // Offline mode - load only cached images
-        console.log('Offline mode: loading cached images only');
-        const docDir = FileSystem.documentDirectory;
-        if (!docDir) {
-          setImages([]);
-          setHasLoaded(true);
-          return;
-        }
-        
+      // Always load cached images first (both online and offline mode)
+      console.log('Loading cached images...');
+      const docDir = FileSystem.documentDirectory;
+      if (docDir) {
         const thumbnailsDir = `${docDir}thumbnails`;
         const dirInfo = await FileSystem.getInfoAsync(thumbnailsDir);
         
-        if (!dirInfo.exists) {
-          console.log('No thumbnails directory found in offline mode');
-          setImages([]);
-          setHasLoaded(true);
-          return;
-        }
-        
-        // Get all cached thumbnail files
-        const thumbnailFiles = await FileSystem.readDirectoryAsync(thumbnailsDir);
-        const jpgThumbnails = thumbnailFiles.filter(file => file.endsWith('.jpg'));
-        
-        console.log(`Found ${jpgThumbnails.length} cached thumbnails in offline mode`);
-        
-        // Create image objects from cached thumbnails
-        const cachedImages = jpgThumbnails.map((thumbnailFile, index) => {
-          // Extract filename from thumbnail name (remove 'thumb_' prefix and '.jpg' suffix)
-          const filename = thumbnailFile.replace(/^thumb_/, '').replace(/\.jpg$/, '');
+        if (dirInfo.exists) {
+          // Get all cached thumbnail files
+          const thumbnailFiles = await FileSystem.readDirectoryAsync(thumbnailsDir);
+          const jpgThumbnails = thumbnailFiles.filter(file => file.endsWith('.jpg'));
           
-          return {
-            id: `cached_${index}_${Date.now()}`,
-            url: `file://${thumbnailsDir}/${thumbnailFile}`,
-            filename: filename,
-            prompt: 'Cached image',
-            negativePrompt: '',
-            steps: 0,
-            seed: 0,
-            cfgscale: 0,
-            width: 0,
-            height: 0,
-            sampler: '',
-            scheduler: '',
-            model: '',
-            modelFile: '',
-            date: new Date().toISOString(),
-            timestamp: new Date(),
-            thumbnailUri: `file://${thumbnailsDir}/${thumbnailFile}`,
-            thumbnailFailed: false,
-            imageData: undefined,
-          };
-        });
-        
-        setImages(cachedImages);
-        setAllImageFiles([]);
-        setCurrentPage(0);
-        setHasMore(false);
-        setHasLoaded(true);
+          console.log(`Found ${jpgThumbnails.length} cached thumbnails`);
+          
+          // Create image objects from cached thumbnails
+          const cachedImages = jpgThumbnails.map((thumbnailFile, index) => {
+            // Extract filename from thumbnail name (remove 'thumb_' prefix and '.jpg' suffix)
+            const filename = thumbnailFile.replace(/^thumb_/, '').replace(/\.jpg$/, '');
+            
+            return {
+              id: `cached_${index}_${Date.now()}`,
+              url: `file://${thumbnailsDir}/${thumbnailFile}`,
+              filename: filename,
+              prompt: 'Cached image',
+              negativePrompt: '',
+              steps: 0,
+              seed: 0,
+              cfgscale: 0,
+              width: 0,
+              height: 0,
+              sampler: '',
+              scheduler: '',
+              model: '',
+              modelFile: '',
+              date: new Date().toISOString(),
+              timestamp: new Date(),
+              thumbnailUri: `file://${thumbnailsDir}/${thumbnailFile}`,
+              thumbnailFailed: false,
+              imageData: undefined,
+            };
+          });
+          
+          setImages(cachedImages);
+        } else {
+          setImages([]);
+        }
+      } else {
+        setImages([]);
       }
+      
+      // If we have a session, fetch server images but don't load them yet
+      if (sessionId) {
+        console.log('Online mode: fetching image list from server...');
+        const response = await apiService.listImages("", 3, "Name", false, sessionId || undefined);
+        console.log(`Received ${response.files.length} files from server`);
+        setAllImageFiles(response.files);
+        
+        // Load the first page of server images automatically
+        if (response.files.length > 0) {
+          console.log('Loading first page of server images automatically...');
+          const firstPageFiles = response.files.slice(0, ITEMS_PER_PAGE);
+          const imageObjects = processImageFiles(firstPageFiles);
+          
+          // Add server images to the existing cached images
+          const imagesWithLoadingStates = imageObjects.map((image) => ({
+            ...image,
+            imageData: undefined,
+            thumbnailUri: undefined, // This will trigger loading state
+          }));
+          
+          setImages(prev => {
+            const newImages = [...prev, ...imagesWithLoadingStates];
+            // Queue thumbnails for loading one by one
+            queueThumbnails(imageObjects, prev.length);
+            return newImages;
+          });
+          setCurrentPage(0);
+          setHasMore(response.files.length > ITEMS_PER_PAGE); // Enable load more button if there are more images
+        } else {
+          setHasMore(false);
+        }
+      } else {
+        setAllImageFiles([]);
+        setHasMore(false);
+      }
+      
+      setCurrentPage(0);
+      setHasLoaded(true);
       
     } catch (err) {
       console.error('Failed to fetch images:', err);
@@ -312,20 +319,23 @@ export const useImageHistory = () => {
     } finally {
       setLoading(false);
     }
-  }, [hasLoaded, processImageFiles, sessionId, queueThumbnails]);
+  }, [hasLoaded, sessionId]);
 
   const loadMoreImages = useCallback(async () => {
     if (loadingMore || !hasMore || isLoadingThumbnails) return; // Don't load more if still loading thumbnails
     setLoadingMore(true);
     try {
+      // If we haven't loaded any server images yet, start from the first page
       const nextPage = currentPage + 1;
       const startIndex = nextPage * ITEMS_PER_PAGE;
       const endIndex = startIndex + ITEMS_PER_PAGE;
       const nextPageFiles = allImageFiles.slice(startIndex, endIndex);
+      
       if (nextPageFiles.length === 0) {
         setHasMore(false);
         return;
       }
+      
       const imageObjects = processImageFiles(nextPageFiles);
       
       // Add images immediately with loading states
@@ -417,118 +427,94 @@ export const useImageHistory = () => {
       // Clean up any corrupted thumbnails first
       await cleanupThumbnails();
       
-      if (sessionId) {
-        // Online mode - fetch from server
-        console.log('Online mode: fetching images from server...');
-        const response = await apiService.listImages("", 3, "Name", false, sessionId || undefined);
-        console.log(`Received ${response.files.length} files from server`);
-        
-        setAllImageFiles(response.files);
-        const firstPageFiles = response.files.slice(0, ITEMS_PER_PAGE);
-        const imageObjects = processImageFiles(firstPageFiles);
-        console.log(`Processing ${imageObjects.length} image objects`);
-        
-        // Load cached thumbnails for existing images
-        console.log('Loading cached thumbnails...');
-        const imagesWithCachedThumbnails = await Promise.all(
-          imageObjects.map(async (image) => {
-            const safeId = image.id.replace(/[^a-zA-Z0-9-_]/g, '_');
-            const docDir = FileSystem.documentDirectory;
-            if (!docDir) {
-              return { ...image, imageData: undefined, thumbnailUri: undefined };
-            }
-            
-            // Check if we have a cached JPG thumbnail
-            const thumbnailsDir = `${docDir}thumbnails`;
-            const cachedThumbPath = `${thumbnailsDir}/thumb_${safeId}.jpg`;
-            
-            // Check if cached thumbnail exists
-            const cachedThumbInfo = await FileSystem.getInfoAsync(cachedThumbPath);
-            if (cachedThumbInfo.exists && cachedThumbInfo.size > 0) {
-              console.log(`Found cached thumbnail for: ${image.filename}`);
-              return { ...image, imageData: undefined, thumbnailUri: cachedThumbPath, thumbnailFailed: false };
-            }
-            
-            // No cached thumbnail found
-            console.log(`No cached thumbnail for: ${image.filename}`);
-            return { ...image, imageData: undefined, thumbnailUri: undefined };
-          })
-        );
-        
-        console.log(`Setting ${imagesWithCachedThumbnails.length} images with cached thumbnails`);
-        setImages(imagesWithCachedThumbnails);
-        setCurrentPage(0);
-        setHasMore(response.files.length > ITEMS_PER_PAGE);
-        setHasLoaded(true);
-        
-        // Queue thumbnails for loading one by one (only for images without cached thumbnails)
-        const imagesNeedingThumbnails = imageObjects.filter((_, index) => !imagesWithCachedThumbnails[index].thumbnailUri);
-        console.log(`${imagesNeedingThumbnails.length} images need thumbnail creation`);
-        
-        if (imagesNeedingThumbnails.length > 0) {
-          console.log('Queueing thumbnail creation for missing thumbnails...');
-          queueThumbnails(imagesNeedingThumbnails, 0);
-        }
-      } else {
-        // Offline mode - reload cached images
-        console.log('Offline mode: reloading cached images...');
-        const docDir = FileSystem.documentDirectory;
-        if (!docDir) {
-          setImages([]);
-          setHasLoaded(true);
-          return;
-        }
-        
+      // Always load cached images first (both online and offline mode)
+      console.log('Loading cached images...');
+      const docDir = FileSystem.documentDirectory;
+      if (docDir) {
         const thumbnailsDir = `${docDir}thumbnails`;
         const dirInfo = await FileSystem.getInfoAsync(thumbnailsDir);
         
-        if (!dirInfo.exists) {
-          console.log('No thumbnails directory found in offline mode');
-          setImages([]);
-          setHasLoaded(true);
-          return;
-        }
-        
-        // Get all cached thumbnail files
-        const thumbnailFiles = await FileSystem.readDirectoryAsync(thumbnailsDir);
-        const jpgThumbnails = thumbnailFiles.filter(file => file.endsWith('.jpg'));
-        
-        console.log(`Found ${jpgThumbnails.length} cached thumbnails in offline mode`);
-        
-        // Create image objects from cached thumbnails
-        const cachedImages = jpgThumbnails.map((thumbnailFile, index) => {
-          // Extract filename from thumbnail name (remove 'thumb_' prefix and '.jpg' suffix)
-          const filename = thumbnailFile.replace(/^thumb_/, '').replace(/\.jpg$/, '');
+        if (dirInfo.exists) {
+          // Get all cached thumbnail files
+          const thumbnailFiles = await FileSystem.readDirectoryAsync(thumbnailsDir);
+          const jpgThumbnails = thumbnailFiles.filter(file => file.endsWith('.jpg'));
           
-          return {
-            id: `cached_${index}_${Date.now()}`,
-            url: `file://${thumbnailsDir}/${thumbnailFile}`,
-            filename: filename,
-            prompt: 'Cached image',
-            negativePrompt: '',
-            steps: 0,
-            seed: 0,
-            cfgscale: 0,
-            width: 0,
-            height: 0,
-            sampler: '',
-            scheduler: '',
-            model: '',
-            modelFile: '',
-            date: new Date().toISOString(),
-            timestamp: new Date(),
-            thumbnailUri: `file://${thumbnailsDir}/${thumbnailFile}`,
-            thumbnailFailed: false,
-            imageData: undefined,
-          };
-        });
-        
-        setImages(cachedImages);
-        setAllImageFiles([]);
-        setCurrentPage(0);
-        setHasMore(false);
-        setHasLoaded(true);
+          console.log(`Found ${jpgThumbnails.length} cached thumbnails`);
+          
+          // Create image objects from cached thumbnails
+          const cachedImages = jpgThumbnails.map((thumbnailFile, index) => {
+            // Extract filename from thumbnail name (remove 'thumb_' prefix and '.jpg' suffix)
+            const filename = thumbnailFile.replace(/^thumb_/, '').replace(/\.jpg$/, '');
+            
+            return {
+              id: `cached_${index}_${Date.now()}`,
+              url: `file://${thumbnailsDir}/${thumbnailFile}`,
+              filename: filename,
+              prompt: 'Cached image',
+              negativePrompt: '',
+              steps: 0,
+              seed: 0,
+              cfgscale: 0,
+              width: 0,
+              height: 0,
+              sampler: '',
+              scheduler: '',
+              model: '',
+              modelFile: '',
+              date: new Date().toISOString(),
+              timestamp: new Date(),
+              thumbnailUri: `file://${thumbnailsDir}/${thumbnailFile}`,
+              thumbnailFailed: false,
+              imageData: undefined,
+            };
+          });
+          
+          setImages(cachedImages);
+        } else {
+          setImages([]);
+        }
+      } else {
+        setImages([]);
       }
+      
+      // If we have a session, fetch server images but don't load them yet
+      if (sessionId) {
+        console.log('Online mode: fetching image list from server...');
+        const response = await apiService.listImages("", 3, "Name", false, sessionId || undefined);
+        console.log(`Received ${response.files.length} files from server`);
+        setAllImageFiles(response.files);
+        
+        // Load the first page of server images automatically
+        if (response.files.length > 0) {
+          console.log('Loading first page of server images automatically...');
+          const firstPageFiles = response.files.slice(0, ITEMS_PER_PAGE);
+          const imageObjects = processImageFiles(firstPageFiles);
+          
+          // Add server images to the existing cached images
+          const imagesWithLoadingStates = imageObjects.map((image) => ({
+            ...image,
+            imageData: undefined,
+            thumbnailUri: undefined, // This will trigger loading state
+          }));
+          
+          setImages(prev => {
+            const newImages = [...prev, ...imagesWithLoadingStates];
+            // Queue thumbnails for loading one by one
+            queueThumbnails(imageObjects, prev.length);
+            return newImages;
+          });
+          setCurrentPage(0);
+          setHasMore(response.files.length > ITEMS_PER_PAGE); // Enable load more button if there are more images
+        } else {
+          setHasMore(false);
+        }
+      } else {
+        setAllImageFiles([]);
+        setHasMore(false);
+      }
+      
+      setCurrentPage(0);
+      setHasLoaded(true);
       
       console.log('Refresh completed successfully');
       
@@ -549,7 +535,7 @@ export const useImageHistory = () => {
       setLoading(false);
       console.log('Refresh loading state set to false');
     }
-  }, [processImageFiles, sessionId, queueThumbnails]);
+  }, [sessionId]);
 
   const refreshImage = useCallback(async (imageId: string) => {
     const image = images.find(img => img.id === imageId);
