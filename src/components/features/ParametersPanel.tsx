@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { Animated, Dimensions, ScrollView, Text, TouchableOpacity, View } from 'react-native';
+import { Animated, Dimensions, FlatList, Text, TouchableOpacity, View } from 'react-native';
 import { PANEL_EXPANDED_HEIGHT } from '../../hooks/useSidePanel';
 import { useTheme } from '../../hooks/useTheme';
 import SidePanelStyles from '../../styles/SidePanelStyles';
@@ -59,6 +59,121 @@ function ParametersPanel({
     }).start();
   }, [showSidePanel, contentOpacity]);
 
+  // Create data array for FlatList
+  const renderSections = () => {
+    const sections = [];
+
+    // Core Parameters Section
+    sections.push({
+      id: 'core-params-header',
+      type: 'header',
+      title: 'Core Parameters',
+      isExpanded: showCoreParams,
+      onToggle: () => setShowCoreParams(!showCoreParams),
+    });
+
+    if (showCoreParams) {
+      sections.push({
+        id: 'core-params-content',
+        type: 'core-params',
+      });
+    }
+
+    // Sampling Section
+    sections.push({
+      id: 'sampling-header',
+      type: 'header',
+      title: 'Sampling',
+      isExpanded: showSampling,
+      onToggle: () => setShowSampling(!showSampling),
+    });
+
+    if (showSampling) {
+      sections.push({
+        id: 'sampling-content',
+        type: 'sampling',
+      });
+    }
+
+    // Resolution Section
+    sections.push({
+      id: 'resolution-header',
+      type: 'header',
+      title: 'Resolution',
+      isExpanded: showResolution,
+      onToggle: () => setShowResolution(!showResolution),
+    });
+
+    if (showResolution) {
+      sections.push({
+        id: 'resolution-content',
+        type: 'resolution',
+      });
+    }
+
+    return sections;
+  };
+
+  const renderItem = ({ item }: { item: any }) => {
+    if (item.type === 'header') {
+      return (
+        <TouchableOpacity 
+          onPress={item.onToggle} 
+          style={[SidePanelStyles.sectionHeader, { backgroundColor: theme.panel, borderColor: theme.border }]}
+        >
+          <Text style={[SidePanelStyles.sectionHeaderText, { color: theme.text }]}>{item.title}</Text>
+          <Text style={[SidePanelStyles.sectionHeaderToggle, { color: theme.accent }]}>{item.isExpanded ? '-' : '+'}</Text>
+        </TouchableOpacity>
+      );
+    }
+
+    if (item.type === 'core-params') {
+      return (
+        <CoreParametersSection
+          steps={steps}
+          setSteps={setSteps}
+          cfgScale={cfgScale}
+          setCfgScale={setCfgScale}
+          loading={loading}
+          images={images}
+          setImages={setImages}
+          seed={seed}
+          setSeed={setSeed}
+          aspectRatio={aspectRatio}
+          setAspectRatio={setAspectRatio}
+          width={width}
+          height={height}
+        />
+      );
+    }
+
+    if (item.type === 'sampling') {
+      return (
+        <SamplingSection
+          sampler={sampler}
+          setSampler={setSampler}
+          scheduler={scheduler}
+          setScheduler={setScheduler}
+          loading={loading}
+        />
+      );
+    }
+
+    if (item.type === 'resolution') {
+      return (
+        <ResolutionSection
+          aspectRatio={aspectRatio}
+          setAspectRatio={setAspectRatio}
+          width={width}
+          height={height}
+          loading={loading}
+        />
+      );
+    }
+
+    return null;
+  };
+
   return (
     <View style={[SidePanelStyles.parametersContainer, { backgroundColor: theme.panel }]}>
       <Animated.View
@@ -100,60 +215,14 @@ function ParametersPanel({
           ]}
           pointerEvents={showSidePanel ? 'auto' : 'none'}
         >
-          <ScrollView contentContainerStyle={SidePanelStyles.scrollViewContent}>
-            {/* Core Parameters Section */}
-            <TouchableOpacity onPress={() => setShowCoreParams(!showCoreParams)} style={[SidePanelStyles.sectionHeader, { backgroundColor: theme.panel, borderColor: theme.border }]}>
-              <Text style={[SidePanelStyles.sectionHeaderText, { color: theme.text }]}>Core Parameters</Text>
-              <Text style={[SidePanelStyles.sectionHeaderToggle, { color: theme.accent }]}>{showCoreParams ? '-' : '+'}</Text>
-            </TouchableOpacity>
-            {showCoreParams && (
-              <CoreParametersSection
-                steps={steps}
-                setSteps={setSteps}
-                cfgScale={cfgScale}
-                setCfgScale={setCfgScale}
-                loading={loading}
-                images={images}
-                setImages={setImages}
-                seed={seed}
-                setSeed={setSeed}
-                aspectRatio={aspectRatio}
-                setAspectRatio={setAspectRatio}
-                width={width}
-                height={height}
-              />
-            )}
-
-            {/* Sampling Section */}
-            <TouchableOpacity onPress={() => setShowSampling(!showSampling)} style={[SidePanelStyles.sectionHeader, { backgroundColor: theme.panel, borderColor: theme.border }]}>
-              <Text style={[SidePanelStyles.sectionHeaderText, { color: theme.text }]}>Sampling</Text>
-              <Text style={[SidePanelStyles.sectionHeaderToggle, { color: theme.accent }]}>{showSampling ? '-' : '+'}</Text>
-            </TouchableOpacity>
-            {showSampling && (
-              <SamplingSection
-                sampler={sampler}
-                setSampler={setSampler}
-                scheduler={scheduler}
-                setScheduler={setScheduler}
-                loading={loading}
-              />
-            )}
-
-            {/* Resolution Section */}
-            <TouchableOpacity onPress={() => setShowResolution(!showResolution)} style={[SidePanelStyles.sectionHeader, { backgroundColor: theme.panel, borderColor: theme.border }]}>
-              <Text style={[SidePanelStyles.sectionHeaderText, { color: theme.text }]}>Resolution</Text>
-              <Text style={[SidePanelStyles.sectionHeaderToggle, { color: theme.accent }]}>{showResolution ? '-' : '+'}</Text>
-            </TouchableOpacity>
-            {showResolution && (
-              <ResolutionSection
-                aspectRatio={aspectRatio}
-                setAspectRatio={setAspectRatio}
-                width={width}
-                height={height}
-                loading={loading}
-              />
-            )}
-          </ScrollView>
+          <FlatList
+            data={renderSections()}
+            renderItem={renderItem}
+            keyExtractor={(item) => item.id}
+            contentContainerStyle={SidePanelStyles.scrollViewContent}
+            showsVerticalScrollIndicator={false}
+            scrollEnabled={true}
+          />
         </Animated.View>
       </Animated.View>
     </View>
