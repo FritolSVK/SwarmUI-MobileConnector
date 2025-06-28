@@ -2,6 +2,8 @@ import * as FileSystem from 'expo-file-system';
 import * as ImageManipulator from 'expo-image-manipulator';
 import { Dimensions } from 'react-native';
 import { THUMBNAIL_CONFIG } from '../constants/config';
+import { HistoryImage } from '../types/HistoryImage';
+import { historyImageToMetadata, saveCachedImageMetadata } from './storage';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -98,9 +100,14 @@ export async function cleanupThumbnails(): Promise<void> {
  * The thumbnail maintains the original aspect ratio and fits within a square.
  * @param imageData The base64 string of the image (data:image/png;base64,...) or URL
  * @param safeId Unique safe id for the image (used for filename)
+ * @param imageMetadata Optional metadata to save alongside the thumbnail
  * @returns The local URI of the stored thumbnail
  */
-export async function createAndStoreThumbnail(imageData: string, safeId: string): Promise<string> {
+export async function createAndStoreThumbnail(
+  imageData: string, 
+  safeId: string, 
+  imageMetadata?: HistoryImage
+): Promise<string> {
   let tempPath: string | null = null;
   let thumbPath: string | null = null;
   
@@ -253,6 +260,18 @@ export async function createAndStoreThumbnail(imageData: string, safeId: string)
     const thumbFileInfo = await FileSystem.getInfoAsync(thumbPath);
     if (!thumbFileInfo.exists || thumbFileInfo.size === 0) {
       throw new Error('Failed to create thumbnail file');
+    }
+    
+    // Save metadata if provided
+    if (imageMetadata) {
+      try {
+        const metadata = historyImageToMetadata(imageMetadata);
+        await saveCachedImageMetadata(metadata);
+        console.log('Saved metadata for cached image:', safeId);
+      } catch (metadataError) {
+        console.warn('Failed to save image metadata, but thumbnail was created successfully:', metadataError);
+        // Don't fail the entire operation if metadata saving fails
+      }
     }
     
     return thumbPath;

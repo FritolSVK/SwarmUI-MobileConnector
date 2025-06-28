@@ -5,7 +5,15 @@ import { useSession } from '../contexts';
 import { apiService } from '../services/api';
 import { HistoryImage } from '../types/HistoryImage';
 import { cleanupThumbnails, createAndStoreThumbnail } from '../utils/imageUtils';
-import { clearAllThumbnails, listAllThumbnails } from '../utils/storage';
+import {
+  clearAllThumbnails,
+  debugCachedImagesMetadata,
+  generateCachedImageId,
+  listAllThumbnails,
+  loadCachedImagesMetadata,
+  metadataToHistoryImage,
+  sortImagesByDate
+} from '../utils/storage';
 
 // Helper to strip leading "raw/" if present
 function stripRawPrefix(path: string) {
@@ -25,7 +33,7 @@ export const useImageHistory = () => {
   const { sessionId } = useSession();
   
   // Queue management for thumbnail loading
-  const thumbnailQueue = useRef<{filename: string; id: string; index: number}[]>([]);
+  const thumbnailQueue = useRef<{filename: string; id: string; index: number; imageMetadata?: HistoryImage}[]>([]);
   const isProcessingQueue = useRef(false);
   const abortController = useRef<AbortController | null>(null);
 
@@ -78,7 +86,7 @@ export const useImageHistory = () => {
   }, []);
 
   // New function: fetch image and create thumbnail in one step
-  const fetchAndCreateThumbnail = useCallback(async (filename: string, id: string): Promise<string | undefined> => {
+  const fetchAndCreateThumbnail = useCallback(async (filename: string, id: string, imageMetadata?: HistoryImage): Promise<string | undefined> => {
     try {
       // Skip video files - ImageManipulator cannot handle video formats
       const videoExtensions = ['.webm', '.mp4', '.avi', '.mov', '.mkv', '.flv', '.wmv'];
@@ -111,8 +119,8 @@ export const useImageHistory = () => {
         return undefined;
       }
       
-      // Create and store JPG thumbnail
-      const thumbnailUri = await createAndStoreThumbnail(imageData, safeId);
+      // Create and store JPG thumbnail with metadata
+      const thumbnailUri = await createAndStoreThumbnail(imageData, safeId, imageMetadata);
       
       if (!thumbnailUri) {
         console.warn('Thumbnail creation returned null for filename:', filename);
@@ -146,7 +154,7 @@ export const useImageHistory = () => {
       if (!item) break;
 
       try {
-        const thumbnailUri = await fetchAndCreateThumbnail(item.filename, item.id);
+        const thumbnailUri = await fetchAndCreateThumbnail(item.filename, item.id, item.imageMetadata);
         
         if (thumbnailUri) {
           // Success - set the thumbnail URI
@@ -194,7 +202,8 @@ export const useImageHistory = () => {
     thumbnailQueue.current = imageObjects.map((image, i) => ({
       filename: image.filename,
       id: image.id,
-      index: startIndex + i
+      index: startIndex + i,
+      imageMetadata: image // Pass the full image object for metadata saving
     }));
 
     setIsLoadingThumbnails(true);
@@ -228,35 +237,79 @@ export const useImageHistory = () => {
           
           console.log(`Found ${jpgThumbnails.length} cached thumbnails`);
           
-          // Create image objects from cached thumbnails
+          // Load cached image metadata
+          const cachedMetadata = await loadCachedImagesMetadata();
+          console.log(`Loaded metadata for ${Object.keys(cachedMetadata).length} cached images`);
+          
+          // Debug: Log metadata details
+          await debugCachedImagesMetadata();
+          
+          // Create image objects from cached thumbnails with metadata
           const cachedImages = jpgThumbnails.map((thumbnailFile, index) => {
             // Extract filename from thumbnail name (remove 'thumb_' prefix and '.jpg' suffix)
             const filename = thumbnailFile.replace(/^thumb_/, '').replace(/\.jpg$/, '');
+            const thumbnailUri = `file://${thumbnailsDir}/${thumbnailFile}`;
             
-            return {
-              id: `cached_${index}_${Date.now()}`,
-              url: `file://${thumbnailsDir}/${thumbnailFile}`,
-              filename: filename,
-              prompt: 'Cached image',
-              negativePrompt: '',
-              steps: 0,
-              seed: 0,
-              cfgscale: 0,
-              width: 0,
-              height: 0,
-              sampler: '',
-              scheduler: '',
-              model: '',
-              modelFile: '',
-              date: new Date().toISOString(),
-              timestamp: new Date(),
-              thumbnailUri: `file://${thumbnailsDir}/${thumbnailFile}`,
-              thumbnailFailed: false,
-              imageData: undefined,
-            };
+            // Try to find metadata for this image by matching the safe ID
+            const safeId = filename; // The filename is the safe ID
+            let metadata = null;
+            
+            // First try to find metadata by the safe ID directly
+            if (cachedMetadata[safeId]) {
+              metadata = cachedMetadata[safeId];
+            } else {
+              // If not found, try to find by matching the original ID pattern
+              // Look for metadata entries that might match this thumbnail
+              for (const [metadataId, meta] of Object.entries(cachedMetadata)) {
+                const metadataSafeId = metadataId.replace(/[^a-zA-Z0-9-_]/g, '_');
+                if (metadataSafeId === safeId) {
+                  metadata = meta;
+                  break;
+                }
+              }
+            }
+            
+            if (metadata) {
+              // Use saved metadata to restore full image properties
+              return metadataToHistoryImage(metadata, thumbnailUri);
+            } else {
+              // Fallback for images without metadata (legacy cached images)
+              const fallbackId = generateCachedImageId(filename);
+              return {
+                id: fallbackId,
+                url: thumbnailUri,
+                filename: filename,
+                prompt: 'Cached image',
+                negativePrompt: '',
+                steps: 0,
+                seed: 0,
+                cfgscale: 0,
+                width: 0,
+                height: 0,
+                sampler: '',
+                scheduler: '',
+                model: '',
+                modelFile: '',
+                date: new Date().toISOString(),
+                timestamp: new Date(),
+                thumbnailUri,
+                thumbnailFailed: false,
+                imageData: undefined,
+              };
+            }
           });
           
-          setImages(cachedImages);
+          // Sort cached images by generation date (newest first)
+          const sortedCachedImages = sortImagesByDate(cachedImages);
+          
+          console.log(`Sorted ${sortedCachedImages.length} cached images by date`);
+          if (sortedCachedImages.length > 0) {
+            const oldest = sortedCachedImages[sortedCachedImages.length - 1].timestamp;
+            const newest = sortedCachedImages[0].timestamp;
+            console.log(`Cached images date range: ${oldest.toISOString()} to ${newest.toISOString()}`);
+          }
+          
+          setImages(sortedCachedImages);
         } else {
           setImages([]);
         }
@@ -286,9 +339,17 @@ export const useImageHistory = () => {
           
           setImages(prev => {
             const newImages = [...prev, ...imagesWithLoadingStates];
+            // Sort all images by date (newest first) to ensure proper ordering
+            const sortedImages = sortImagesByDate(newImages);
+            console.log(`Combined ${prev.length} cached + ${imagesWithLoadingStates.length} server images, sorted by date`);
+            if (sortedImages.length > 0) {
+              const oldest = sortedImages[sortedImages.length - 1].timestamp;
+              const newest = sortedImages[0].timestamp;
+              console.log(`Final image date range: ${oldest.toISOString()} to ${newest.toISOString()}`);
+            }
             // Queue thumbnails for loading one by one
             queueThumbnails(imageObjects, prev.length);
-            return newImages;
+            return sortedImages;
           });
           setCurrentPage(0);
           setHasMore(response.files.length > ITEMS_PER_PAGE); // Enable load more button if there are more images
@@ -319,7 +380,7 @@ export const useImageHistory = () => {
     } finally {
       setLoading(false);
     }
-  }, [hasLoaded, sessionId]);
+  }, [hasLoaded, sessionId, processImageFiles, queueThumbnails]);
 
   const loadMoreImages = useCallback(async () => {
     if (loadingMore || !hasMore || isLoadingThumbnails) return; // Don't load more if still loading thumbnails
@@ -344,7 +405,11 @@ export const useImageHistory = () => {
         imageData: undefined,
         thumbnailUri: undefined, // This will trigger loading state
       }));
-      setImages(prev => [...prev, ...imagesWithLoadingStates]);
+      setImages(prev => {
+        const newImages = [...prev, ...imagesWithLoadingStates];
+        // Sort all images by date (newest first) to maintain proper ordering
+        return sortImagesByDate(newImages);
+      });
       setCurrentPage(nextPage);
       setHasMore(endIndex < allImageFiles.length);
       
@@ -441,35 +506,79 @@ export const useImageHistory = () => {
           
           console.log(`Found ${jpgThumbnails.length} cached thumbnails`);
           
-          // Create image objects from cached thumbnails
+          // Load cached image metadata
+          const cachedMetadata = await loadCachedImagesMetadata();
+          console.log(`Loaded metadata for ${Object.keys(cachedMetadata).length} cached images`);
+          
+          // Debug: Log metadata details
+          await debugCachedImagesMetadata();
+          
+          // Create image objects from cached thumbnails with metadata
           const cachedImages = jpgThumbnails.map((thumbnailFile, index) => {
             // Extract filename from thumbnail name (remove 'thumb_' prefix and '.jpg' suffix)
             const filename = thumbnailFile.replace(/^thumb_/, '').replace(/\.jpg$/, '');
+            const thumbnailUri = `file://${thumbnailsDir}/${thumbnailFile}`;
             
-            return {
-              id: `cached_${index}_${Date.now()}`,
-              url: `file://${thumbnailsDir}/${thumbnailFile}`,
-              filename: filename,
-              prompt: 'Cached image',
-              negativePrompt: '',
-              steps: 0,
-              seed: 0,
-              cfgscale: 0,
-              width: 0,
-              height: 0,
-              sampler: '',
-              scheduler: '',
-              model: '',
-              modelFile: '',
-              date: new Date().toISOString(),
-              timestamp: new Date(),
-              thumbnailUri: `file://${thumbnailsDir}/${thumbnailFile}`,
-              thumbnailFailed: false,
-              imageData: undefined,
-            };
+            // Try to find metadata for this image by matching the safe ID
+            const safeId = filename; // The filename is the safe ID
+            let metadata = null;
+            
+            // First try to find metadata by the safe ID directly
+            if (cachedMetadata[safeId]) {
+              metadata = cachedMetadata[safeId];
+            } else {
+              // If not found, try to find by matching the original ID pattern
+              // Look for metadata entries that might match this thumbnail
+              for (const [metadataId, meta] of Object.entries(cachedMetadata)) {
+                const metadataSafeId = metadataId.replace(/[^a-zA-Z0-9-_]/g, '_');
+                if (metadataSafeId === safeId) {
+                  metadata = meta;
+                  break;
+                }
+              }
+            }
+            
+            if (metadata) {
+              // Use saved metadata to restore full image properties
+              return metadataToHistoryImage(metadata, thumbnailUri);
+            } else {
+              // Fallback for images without metadata (legacy cached images)
+              const fallbackId = generateCachedImageId(filename);
+              return {
+                id: fallbackId,
+                url: thumbnailUri,
+                filename: filename,
+                prompt: 'Cached image',
+                negativePrompt: '',
+                steps: 0,
+                seed: 0,
+                cfgscale: 0,
+                width: 0,
+                height: 0,
+                sampler: '',
+                scheduler: '',
+                model: '',
+                modelFile: '',
+                date: new Date().toISOString(),
+                timestamp: new Date(),
+                thumbnailUri,
+                thumbnailFailed: false,
+                imageData: undefined,
+              };
+            }
           });
           
-          setImages(cachedImages);
+          // Sort cached images by generation date (newest first)
+          const sortedCachedImages = sortImagesByDate(cachedImages);
+          
+          console.log(`Sorted ${sortedCachedImages.length} cached images by date`);
+          if (sortedCachedImages.length > 0) {
+            const oldest = sortedCachedImages[sortedCachedImages.length - 1].timestamp;
+            const newest = sortedCachedImages[0].timestamp;
+            console.log(`Cached images date range: ${oldest.toISOString()} to ${newest.toISOString()}`);
+          }
+          
+          setImages(sortedCachedImages);
         } else {
           setImages([]);
         }
@@ -499,9 +608,17 @@ export const useImageHistory = () => {
           
           setImages(prev => {
             const newImages = [...prev, ...imagesWithLoadingStates];
+            // Sort all images by date (newest first) to ensure proper ordering
+            const sortedImages = sortImagesByDate(newImages);
+            console.log(`Combined ${prev.length} cached + ${imagesWithLoadingStates.length} server images, sorted by date`);
+            if (sortedImages.length > 0) {
+              const oldest = sortedImages[sortedImages.length - 1].timestamp;
+              const newest = sortedImages[0].timestamp;
+              console.log(`Final image date range: ${oldest.toISOString()} to ${newest.toISOString()}`);
+            }
             // Queue thumbnails for loading one by one
             queueThumbnails(imageObjects, prev.length);
-            return newImages;
+            return sortedImages;
           });
           setCurrentPage(0);
           setHasMore(response.files.length > ITEMS_PER_PAGE); // Enable load more button if there are more images
@@ -535,7 +652,7 @@ export const useImageHistory = () => {
       setLoading(false);
       console.log('Refresh loading state set to false');
     }
-  }, [sessionId]);
+  }, [sessionId, processImageFiles, queueThumbnails]);
 
   const refreshImage = useCallback(async (imageId: string) => {
     const image = images.find(img => img.id === imageId);
@@ -554,7 +671,7 @@ export const useImageHistory = () => {
     const image = images.find(img => img.id === imageId);
     if (!image || image.thumbnailUri || image.thumbnailFailed || !image.filename) return;
 
-    const thumbnailUri = await fetchAndCreateThumbnail(image.filename, image.id);
+    const thumbnailUri = await fetchAndCreateThumbnail(image.filename, image.id, image);
 
     setImages(prev => prev.map(img =>
       img.id === imageId

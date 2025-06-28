@@ -1,6 +1,47 @@
 # SwarmUI Mobile Connector
 
-A React Native/Expo application to connect to a desktop run SwarmUI.
+A React Native mobile app for connecting to SwarmUI image generation servers.
+
+## Features
+
+- **Image Generation**: Generate images using SwarmUI servers with customizable parameters
+- **Image History**: View and manage generated images with full metadata preservation
+- **Offline Support**: Cached images with preserved properties for offline viewing
+- **Responsive Design**: Optimized for mobile devices with touch-friendly interface
+
+## Cached Image Metadata System
+
+The app now includes a comprehensive system for preserving image properties when images are cached locally:
+
+### How It Works
+
+1. **Metadata Storage**: When images are cached as thumbnails, their full metadata (prompt, parameters, model info, etc.) is saved alongside the thumbnail file.
+
+2. **Property Preservation**: Cached images maintain all their original properties including:
+   - Prompt and negative prompt
+   - Generation parameters (steps, seed, CFG scale, etc.)
+   - Model information (model name, model file)
+   - Image dimensions (width, height)
+   - Sampler and scheduler settings
+   - Generation date and timestamp
+
+3. **Offline Access**: When the app is reloaded or used offline, cached images display with their full properties instead of showing generic "Cached image" labels.
+
+4. **High-Quality Loading**: When viewing cached images online, the app can still load the full-resolution version from the server while preserving the cached metadata.
+
+### Technical Implementation
+
+- **Storage**: Metadata is stored in a JSON file (`cached_images.json`) in the app's document directory
+- **Thumbnail Linking**: Each thumbnail is linked to its metadata using a consistent ID system
+- **Backward Compatibility**: Legacy cached images without metadata still work and show fallback information
+- **Automatic Cleanup**: When clearing the image cache, both thumbnails and metadata are removed
+
+### Benefits
+
+- **Better User Experience**: Users can see the exact parameters used to generate each cached image
+- **Offline Functionality**: Full image information available even without internet connection
+- **Parameter Reference**: Easy access to successful generation parameters for reuse
+- **Data Integrity**: No loss of important image generation context
 
 ## Project Structure
 
@@ -230,6 +271,23 @@ expo build:android --type app-bundle
 # Build for iOS
 expo build:ios
 ```
+
+## Storage System
+
+The app uses Expo FileSystem for persistent storage:
+
+- **User Settings**: Stored in `user_settings.json`
+- **Cached Images**: Thumbnails stored in `thumbnails/` directory
+- **Image Metadata**: Stored in `cached_images.json`
+
+## Contributing
+
+1. Fork the repository
+2. Create a feature branch
+3. Make your changes
+4. Add tests if applicable
+5. Submit a pull request
+
 ## License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
