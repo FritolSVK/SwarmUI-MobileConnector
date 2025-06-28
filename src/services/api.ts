@@ -15,10 +15,30 @@ function stripRawPrefix(path: string) {
   return path.startsWith('raw/') ? path.slice(4) : path;
 }
 
+// Helper function to create a timeout promise
+function createTimeoutPromise(timeoutMs: number): Promise<never> {
+  return new Promise((_, reject) => {
+    setTimeout(() => {
+      reject(new Error('Request timeout'));
+    }, timeoutMs);
+  });
+}
+
 class ApiService {
+  private onSessionError?: () => void;
+  private requestTimeout = 30000; // 30 seconds timeout
+
+  setSessionErrorCallback(callback: () => void) {
+    this.onSessionError = callback;
+  }
+
   private async makeRequest<T>(url: string, options: RequestInit): Promise<T> {
     try {
-      const response = await fetch(url, {
+      // Create a timeout promise
+      const timeoutPromise = createTimeoutPromise(this.requestTimeout);
+      
+      // Create the fetch promise
+      const fetchPromise = fetch(url, {
         headers: {
           'Content-Type': 'application/json',
           ...options.headers,
@@ -26,12 +46,32 @@ class ApiService {
         ...options,
       });
 
+      // Race between fetch and timeout
+      const response = await Promise.race([fetchPromise, timeoutPromise]);
+
       if (!response.ok) {
+        // Check if this is a session-related error
+        if (response.status === 401 || response.status === 403) {
+          console.log('Session error detected, marking session as invalid');
+          this.onSessionError?.();
+        }
         throw new Error(`HTTP error! status: ${response.status}`);
       }
 
       return await response.json();
-    } catch (error) {
+    } catch (error: any) {
+      // Handle timeout errors silently
+      if (error.message === 'Request timeout') {
+        console.log('Request timed out:', url);
+        throw new Error('Network request timed out');
+      }
+      
+      // Handle network errors silently
+      if (error.name === 'TypeError' && error.message.includes('fetch')) {
+        console.log('Network error:', error.message);
+        throw new Error('Network connection failed');
+      }
+      
       console.error('API request failed:', error);
       throw error;
     }
@@ -130,11 +170,23 @@ class ApiService {
       const cleanFilename = stripRawPrefix(filename);
       const imageUrl = `${API_CONFIG.SWARM_BASE_URL}/View/local/raw/${encodeURIComponent(cleanFilename)}`;
       
-      const response = await fetch(imageUrl, {
+      // Create a timeout promise
+      const timeoutPromise = createTimeoutPromise(this.requestTimeout);
+      
+      // Create the fetch promise
+      const fetchPromise = fetch(imageUrl, {
         method: 'GET',
       });
 
+      // Race between fetch and timeout
+      const response = await Promise.race([fetchPromise, timeoutPromise]);
+
       if (!response.ok) {
+        // Check if this is a session-related error
+        if (response.status === 401 || response.status === 403) {
+          console.log('Session error detected in fetchImage, marking session as invalid');
+          this.onSessionError?.();
+        }
         throw new Error(`HTTP error! status: ${response.status}`);
       }
 
@@ -149,7 +201,19 @@ class ApiService {
         reader.onerror = reject;
         reader.readAsDataURL(blob);
       });
-    } catch (error) {
+    } catch (error: any) {
+      // Handle timeout errors silently
+      if (error.message === 'Request timeout') {
+        console.log('Image fetch timed out:', filename);
+        throw new Error('Image fetch timed out');
+      }
+      
+      // Handle network errors silently
+      if (error.name === 'TypeError' && error.message.includes('fetch')) {
+        console.log('Image fetch network error:', error.message);
+        throw new Error('Image fetch network error');
+      }
+      
       console.error('Failed to fetch image:', error);
       throw error;
     }

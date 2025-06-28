@@ -1,12 +1,17 @@
-import React, { useEffect, useState } from 'react';
-import { Animated, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
+import { useEffect, useState } from 'react';
+import { Animated, Text, View, useWindowDimensions } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { ImageHistory, ImageViewer, NavigationHeader, PromptInput, Settings } from '../components';
 import { NavigationTab } from '../components/features/NavigationHeader';
 import ParametersPanel from '../components/features/ParametersPanel';
+import SessionStatusBanner from '../components/features/SessionStatusBanner';
+import { useSession } from '../contexts/SessionContext';
 import { useImageGeneration, useImageHistory, useSidePanel } from '../hooks';
 import { HistoryImage } from '../hooks/useImageHistory';
 import { useTheme } from '../hooks/useTheme';
+import HomeScreenStyles from '../styles/HomeScreenStyles';
 import { calculateImageDimensions } from '../utils/imageUtils';
+import { loadUserSettings, saveUserSettings } from '../utils/storage';
 
 export default function HomeScreen() {
   const window = useWindowDimensions();
@@ -52,6 +57,7 @@ export default function HomeScreen() {
     loadingMore: historyLoadingMore,
     hasMore: historyHasMore,
     error: historyError,
+    isLoadingThumbnails,
     refreshImages,
     refreshImage,
     loadMoreImages,
@@ -59,14 +65,70 @@ export default function HomeScreen() {
     loadImageData,
     releaseImageData,
     totalCount,
+    loadedThumbnailCount,
   } = useImageHistory();
 
   const [images, setImages] = useState<number>(1);
   const [seed, setSeed] = useState<number>(-1);
-  const [aspectRatio, setAspectRatio] = useState<string>('3:2');
+  const [aspectRatio, setAspectRatio] = useState<string>('2:3');
   const [width, setWidth] = useState<number>(512);
   const [height, setHeight] = useState<number>(768);
-  const [showResolution, setShowResolution] = useState<boolean>(true);
+  const [showResolution, setShowResolution] = useState<boolean>(false);
+
+  const { sessionId } = useSession();
+
+  // Load user settings on app start
+  useEffect(() => {
+    const loadSettings = async () => {
+      try {
+        const settings = await loadUserSettings();
+        if (settings.prompt) setPrompt(settings.prompt);
+        if (settings.sampler) setSampler(settings.sampler);
+        if (settings.scheduler) setScheduler(settings.scheduler);
+        if (settings.steps !== undefined) setSteps(settings.steps);
+        if (settings.cfgScale !== undefined) setCfgScale(settings.cfgScale);
+        if (settings.images !== undefined) setImages(settings.images);
+        if (settings.seed !== undefined) setSeed(settings.seed);
+        if (settings.aspectRatio) setAspectRatio(settings.aspectRatio);
+        if (settings.width !== undefined) setWidth(settings.width);
+        if (settings.height !== undefined) setHeight(settings.height);
+        if (settings.showCoreParams !== undefined) setShowCoreParams(settings.showCoreParams);
+        if (settings.showSampling !== undefined) setShowSampling(settings.showSampling);
+        if (settings.showResolution !== undefined) setShowResolution(settings.showResolution);
+        if (settings.showSidePanel !== undefined) setShowSidePanel(settings.showSidePanel);
+      } catch (error) {
+        console.warn('Failed to load user settings:', error);
+      }
+    };
+    loadSettings();
+  }, []);
+
+  // Save settings whenever they change
+  useEffect(() => {
+    const saveSettings = async () => {
+      try {
+        await saveUserSettings({
+          prompt,
+          sampler,
+          scheduler,
+          steps,
+          cfgScale,
+          images,
+          seed,
+          aspectRatio,
+          width,
+          height,
+          showCoreParams,
+          showSampling,
+          showResolution,
+          showSidePanel,
+        });
+      } catch (error) {
+        console.warn('Failed to save user settings:', error);
+      }
+    };
+    saveSettings();
+  }, [prompt, sampler, scheduler, steps, cfgScale, images, seed, aspectRatio, width, height, showCoreParams, showSampling, showResolution, showSidePanel]);
 
   // Update width/height when aspectRatio changes
   useEffect(() => {
@@ -88,21 +150,21 @@ export default function HomeScreen() {
     setHeight(dims.height);
   }, [aspectRatio]);
 
-  // Only load images when the history tab is opened
+  // Only load images when the history tab is opened and sessionId exists
   useEffect(() => {
-    if (activeTab === 'history' && historyImages.length === 0) {
+    if (activeTab === 'history' && historyImages.length === 0 && sessionId) {
       fetchImages();
     }
-  }, [activeTab, historyImages.length, fetchImages]);
+  }, [activeTab, historyImages.length, fetchImages, sessionId]);
 
   const handleGenerateImage = async () => {
+    if (!sessionId) return;
     await generateImage({
       images,
       seed,
       width,
       height,
     });
-    // After generation, refresh history from the server
     refreshImages();
   };
 
@@ -116,7 +178,7 @@ export default function HomeScreen() {
       if (isGenerating && pendingCount === 0) {
         // Only one image generating, no queue
         return (
-          <Text style={styles.simpleStatusText}>
+          <Text style={HomeScreenStyles.simpleStatusText}>
             Generating...
           </Text>
         );
@@ -124,10 +186,10 @@ export default function HomeScreen() {
         // Currently generating and more in queue
         return (
           <View>
-            <Text style={styles.simpleStatusText}>
+            <Text style={HomeScreenStyles.simpleStatusText}>
               Generating...
             </Text>
-            <Text style={styles.simpleStatusText}>
+            <Text style={HomeScreenStyles.simpleStatusText}>
               {pendingCount} more queued
             </Text>
           </View>
@@ -135,7 +197,7 @@ export default function HomeScreen() {
       } else {
         // Queued but not currently generating
         return (
-          <Text style={styles.simpleStatusText}>
+          <Text style={HomeScreenStyles.simpleStatusText}>
             Queued ({pendingCount} pending)
           </Text>
         );
@@ -145,8 +207,8 @@ export default function HomeScreen() {
   };
 
   const renderMainContent = () => (
-    <View style={styles.verticalColumn}>
-      <View style={[styles.imageWrapper, { height: imageAreaHeight }]}> 
+    <View style={HomeScreenStyles.verticalColumn}>
+      <View style={[HomeScreenStyles.imageWrapper, { height: imageAreaHeight }]}> 
         <ImageViewer
           imageUrl={imageUrl}
           loading={loading}
@@ -190,8 +252,9 @@ export default function HomeScreen() {
         prompt={prompt}
         setPrompt={setPrompt}
         onGenerate={handleGenerateImage}
-        loading={false}
+        loading={!sessionId || false}
         generationStatus={renderSimpleStatus()}
+        disabled={!sessionId}
       />
     </View>
   );
@@ -207,13 +270,15 @@ export default function HomeScreen() {
             onImagePress={handleHistoryImagePress}
             loading={historyLoading}
             loadingMore={historyLoadingMore}
-            hasMore={historyHasMore}
+            hasMore={sessionId ? historyHasMore : false}
             error={historyError}
-            onRefresh={refreshImages}
+            onRefresh={sessionId ? refreshImages : undefined}
             onRefreshImage={refreshImage}
-            onLoadMore={loadMoreImages}
+            onLoadMore={sessionId ? loadMoreImages : undefined}
             loadImageData={loadImageData}
             releaseImageData={releaseImageData}
+            noSession={!sessionId}
+            isLoadingThumbnails={isLoadingThumbnails}
           />
         );
       case 'settings':
@@ -229,41 +294,16 @@ export default function HomeScreen() {
   };
 
   return (
-    <View style={[styles.container, { backgroundColor: theme.background }]}>
+    <SafeAreaView style={[HomeScreenStyles.container, { backgroundColor: theme.background }]} edges={['top', 'left', 'right']}>
+      <SessionStatusBanner />
       <NavigationHeader
         activeTab={activeTab}
         onTabChange={setActiveTab}
-        galleryCount={totalCount}
+        galleryCount={loadedThumbnailCount}
       />
-      {renderContent()}
-    </View>
+      <View style={{ flex: 1, paddingTop: 36 }}>
+        {renderContent()}
+      </View>
+    </SafeAreaView>
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
-  verticalColumn: {
-    flex: 1,
-    flexDirection: 'column',
-    width: '100%',
-    position: 'relative',
-  },
-  imageWrapper: {
-    justifyContent: 'center',
-    alignItems: 'center',
-    flex: 1,
-  },
-  mainContent: {
-    flex: 1,
-    position: 'relative',
-    backgroundColor: '#fff',
-  },
-  simpleStatusText: {
-    color: '#fff',
-    fontSize: 12,
-    textAlign: 'center',
-    fontWeight: '500',
-  },
-});

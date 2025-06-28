@@ -3,8 +3,8 @@ import type { ViewToken } from 'react-native';
 import { ActivityIndicator, Animated, Dimensions, Easing, FlatList, Image, ListRenderItem, Modal, Text, TouchableOpacity, View } from 'react-native';
 import { useTheme } from '../../hooks/useTheme';
 import ImageHistoryStyles from '../../styles/ImageHistoryStyles';
-import SidePanelStyles from '../../styles/SidePanelStyles';
 import { HistoryImage } from '../../types/HistoryImage';
+import ArrowButton from '../ui/ArrowButton';
 import ImageViewer from '../ui/ImageViewer';
 
 interface ImageHistoryProps {
@@ -19,6 +19,8 @@ interface ImageHistoryProps {
   onLoadMore?: () => void;
   loadImageData?: (imageId: string) => void;
   releaseImageData?: (imageId: string) => void;
+  noSession?: boolean;
+  isLoadingThumbnails?: boolean;
 }
 
 export default function ImageHistory({ 
@@ -32,7 +34,9 @@ export default function ImageHistory({
   onRefreshImage,
   onLoadMore,
   loadImageData,
-  releaseImageData
+  releaseImageData,
+  noSession = false,
+  isLoadingThumbnails = false
 }: ImageHistoryProps) {
   const [selectedImage, setSelectedImage] = useState<HistoryImage | null>(null);
   const [showModal, setShowModal] = useState(false);
@@ -88,7 +92,12 @@ export default function ImageHistory({
   };
 
   const renderImageTile: ListRenderItem<HistoryImage> = ({ item, index }) => {
-    const isImageLoading = !item.thumbnailUri && !loading;
+    const isImageLoading = !item.thumbnailUri;
+    
+    const handleImageError = () => {
+      console.warn('Failed to load thumbnail for image:', item.id);
+    };
+
     return (
       <TouchableOpacity
         key={`${item.id}-${index}`}
@@ -98,17 +107,21 @@ export default function ImageHistory({
         ]}
         onPress={() => handleImagePress(item)}
       >
-        {isImageLoading ? (
-          <View style={[ImageHistoryStyles.imageLoadingContainer, { backgroundColor: theme.panel }]}> 
-            <ActivityIndicator size="small" color={theme.accent} />
-          </View>
-        ) : (
-          <Image
-            source={{ uri: item.thumbnailUri || item.url }}
-            style={ImageHistoryStyles.thumbnailImage}
-            resizeMode="cover"
-          />
-        )}
+        <View style={ImageHistoryStyles.imageContainer}>
+          {isImageLoading ? (
+            <View style={[ImageHistoryStyles.imageLoadingContainer, { backgroundColor: theme.panel }]}> 
+              <ActivityIndicator size="small" color={theme.accent} />
+            </View>
+          ) : (
+            <Image
+              source={{ uri: item.thumbnailUri || item.url }}
+              style={ImageHistoryStyles.thumbnailImage}
+              resizeMode="contain"
+              onError={handleImageError}
+              defaultSource={require('../../../assets/images/icon.png')} // Fallback image
+            />
+          )}
+        </View>
       </TouchableOpacity>
     );
   };
@@ -119,7 +132,7 @@ export default function ImageHistory({
       <View style={ImageHistoryStyles.loadMoreContainer}>
         {loadingMore ? (
           <>
-            <ActivityIndicator size="small" color="#007AFF" />
+            <ActivityIndicator size="small" color={theme.accent} />
             <Text style={ImageHistoryStyles.loadMoreText}>Loading more images...</Text>
           </>
         ) : (
@@ -135,15 +148,6 @@ export default function ImageHistory({
       <Text style={[ImageHistoryStyles.emptySubtext, { color: theme.text }]}>Generate your first image to see it here</Text>
     </View>
   );
-
-  if (loading) {
-    return (
-      <View style={ImageHistoryStyles.loadingContainer}>
-        <ActivityIndicator size="large" color="#007AFF" />
-        <Text style={[ImageHistoryStyles.loadingText, { color: theme.text }]}>Loading images...</Text>
-      </View>
-    );
-  }
 
   if (error) {
     return (
@@ -161,13 +165,21 @@ export default function ImageHistory({
 
   return (
     <View style={[ImageHistoryStyles.container, { backgroundColor: theme.background }]}>
+      {noSession && images.length > 0 && (
+        <View style={[ImageHistoryStyles.loadMoreContainer, ImageHistoryStyles.offlineModeContainer, { backgroundColor: theme.panel }]}>
+          <Text style={[ImageHistoryStyles.loadMoreText, ImageHistoryStyles.offlineModeText, { color: theme.secondaryText }]}>
+            Offline Mode - Showing {images.filter(img => img.thumbnailUri).length} loaded images
+          </Text>
+        </View>
+      )}
       <FlatList
         data={images}
         renderItem={renderImageTile}
         keyExtractor={item => item.id}
         numColumns={3}
+        columnWrapperStyle={ImageHistoryStyles.flatListColumnWrapper}
         contentContainerStyle={[ImageHistoryStyles.scrollContent, { backgroundColor: theme.background }]}
-        onEndReached={hasMore && !loadingMore ? onLoadMore : undefined}
+        onEndReached={hasMore && !loadingMore && !isLoadingThumbnails ? onLoadMore : undefined}
         onEndReachedThreshold={0.5}
         ListFooterComponent={renderLoadMoreIndicator}
         ListEmptyComponent={renderEmptyComponent}
@@ -190,25 +202,15 @@ export default function ImageHistory({
         <View style={[ImageHistoryStyles.modalContent, { backgroundColor: theme.background }]}> 
           <TouchableOpacity
             onPress={closeModal}
-            style={{
-              position: 'absolute',
-              top: 32,
-              right: 24,
-              zIndex: 20,
-              backgroundColor: theme.background,
-              borderRadius: 24,
-              width: 44,
-              height: 44,
-              justifyContent: 'center',
-              alignItems: 'center',
-              shadowColor: '#000',
-              shadowOffset: { width: 0, height: 2 },
-              shadowOpacity: 0.12,
-              shadowRadius: 6,
-              elevation: 4,
-            }}
+            style={[
+              ImageHistoryStyles.modalCloseButton,
+              {
+                backgroundColor: theme.background,
+                shadowColor: theme.shadow,
+              }
+            ]}
           >
-            <Text style={{ color: theme.accent, fontSize: 26, fontWeight: 'bold', textAlign: 'center' }}>✕</Text>
+            <Text style={[ImageHistoryStyles.modalCloseButtonText, { color: theme.accent }]}>✕</Text>
           </TouchableOpacity>
           <View style={ImageHistoryStyles.modalScrollWrapper}>
             <View style={[ImageHistoryStyles.modalImageWrapper, { backgroundColor: theme.background }]}> 
@@ -222,17 +224,11 @@ export default function ImageHistory({
                 />
               )}
             </View>
-            <View style={{ alignItems: 'center', marginTop: 8, marginBottom: 0, zIndex: 10 }}>
-              <TouchableOpacity
-                style={[
-                  SidePanelStyles.arrowButton,
-                  { backgroundColor: theme.panel, borderColor: theme.border, marginBottom: 0 }
-                ]}
+            <View style={ImageHistoryStyles.arrowButtonContainer}>
+              <ArrowButton
+                direction={showBottomPanel ? 'down' : 'up'}
                 onPress={() => { setShowBottomPanel(prev => !prev); }}
-                activeOpacity={0.8}
-              >
-                <Text style={[SidePanelStyles.arrowText, { color: theme.accent }]}>{showBottomPanel ? '▼' : '▲'}</Text>
-              </TouchableOpacity>
+              />
             </View>
             {selectedImage && showBottomPanel && (
               <View

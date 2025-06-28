@@ -10,4 +10,8 @@ export interface ImageHistoryProps {
   onRefresh?: () => void;
   onRefreshImage?: (imageId: string) => void;
   onLoadMore?: () => void;
+  loadImageData?: (imageId: string) => void;
+  releaseImageData?: (imageId: string) => void;
+  noSession?: boolean;
+  isLoadingThumbnails?: boolean;
 } 

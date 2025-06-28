@@ -1,5 +1,5 @@
 // Swarm base URL is now mutable and can be updated at runtime
-let swarmBaseUrl = 'http://10.0.2.2:7801';
+let swarmBaseUrl = 'http://192.168.1.100:7801';
 
 export function getSwarmBaseUrl() {
   return swarmBaseUrl;
@@ -41,6 +41,12 @@ export const UI_CONFIG = {
   BOTTOM_BAR_HEIGHT: 72,
   ANIMATION_DURATION: 300,
   ZOOM_SCALE: 2,
+} as const;
+
+export const THUMBNAIL_CONFIG = {
+  SIZE: 128,
+  COMPRESSION: 0.7,
+  FORMAT: 'JPEG' as const,
 } as const;
 
 export const SAMPLER_OPTIONS = [

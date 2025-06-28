@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
-import { View } from 'react-native';
+import { ImageStyle, Text, View } from 'react-native';
 import DropDownPicker from 'react-native-dropdown-picker';
 import { SAMPLER_OPTIONS, SCHEDULER_OPTIONS } from '../../constants/config';
 import { useTheme } from '../../hooks/useTheme';
+import CoreParametersSectionStyles from '../../styles/CoreParametersSectionStyles';
 import SamplingSectionStyles from '../../styles/SamplingSectionStyles';
 import { SamplingSectionProps } from '../../types/SamplingSectionProps';
 
@@ -19,41 +20,42 @@ export default function SamplingSection({ sampler, setSampler, scheduler, setSch
 
   return (
     <View style={[SamplingSectionStyles.card, { backgroundColor: theme.panel, borderColor: theme.border }]}>
+      <Text style={[CoreParametersSectionStyles.sliderLabel, { color: theme.text, textAlign: 'center' }]}>Sampler</Text>
       <DropDownPicker
         open={samplerOpen}
-        setOpen={setSamplerOpen}
         value={sampler}
-        setValue={setSampler}
         items={samplerItems}
+        setOpen={setSamplerOpen}
+        setValue={setSampler}
         disabled={loading}
-        style={{ backgroundColor: theme.panel, borderColor: theme.border }}
-        dropDownContainerStyle={{ backgroundColor: theme.panel, borderColor: theme.border }}
+        style={[SamplingSectionStyles.fullWidthPicker, { backgroundColor: theme.panel, borderColor: theme.border, borderWidth: 0 }]}
         textStyle={{ color: theme.text }}
-        listItemContainerStyle={{ backgroundColor: theme.panel }}
-        selectedItemContainerStyle={{ backgroundColor: theme.accent + '22' }}
-        selectedItemLabelStyle={{ color: theme.accent, fontWeight: 'bold' }}
-        placeholderStyle={{ color: theme.secondaryText }}
-        modalContentContainerStyle={{ backgroundColor: theme.panel }}
+        dropDownContainerStyle={{ backgroundColor: theme.panel, borderColor: theme.border, borderWidth: 0 }}
+        listItemLabelStyle={{ color: theme.text }}
         placeholder="Select Sampler"
+        placeholderStyle={{ color: theme.secondaryText }}
+        arrowIconStyle={{ tintColor: theme.accent } as ImageStyle}
+        tickIconStyle={{ tintColor: theme.accent } as ImageStyle}
         zIndex={2000}
         zIndexInverse={2000}
       />
+
+      <Text style={[CoreParametersSectionStyles.sliderLabel, { color: theme.text, marginTop: 16, textAlign: 'center' }]}>Scheduler</Text>
       <DropDownPicker
         open={schedulerOpen}
-        setOpen={setSchedulerOpen}
         value={scheduler}
-        setValue={setScheduler}
         items={schedulerItems}
+        setOpen={setSchedulerOpen}
+        setValue={setScheduler}
         disabled={loading}
-        style={{ backgroundColor: theme.panel, borderColor: theme.border, marginTop: 12 }}
-        dropDownContainerStyle={{ backgroundColor: theme.panel, borderColor: theme.border }}
+        style={[SamplingSectionStyles.fullWidthPicker, { backgroundColor: theme.panel, borderColor: theme.border, marginTop: 12, borderWidth: 0 }]}
         textStyle={{ color: theme.text }}
-        listItemContainerStyle={{ backgroundColor: theme.panel }}
-        selectedItemContainerStyle={{ backgroundColor: theme.accent + '22' }}
-        selectedItemLabelStyle={{ color: theme.accent, fontWeight: 'bold' }}
-        placeholderStyle={{ color: theme.secondaryText }}
-        modalContentContainerStyle={{ backgroundColor: theme.panel }}
+        dropDownContainerStyle={{ backgroundColor: theme.panel, borderColor: theme.border, borderWidth: 0 }}
+        listItemLabelStyle={{ color: theme.text }}
         placeholder="Select Scheduler"
+        placeholderStyle={{ color: theme.secondaryText }}
+        arrowIconStyle={{ tintColor: theme.accent } as ImageStyle}
+        tickIconStyle={{ tintColor: theme.accent } as ImageStyle}
         zIndex={1000}
         zIndexInverse={1000}
       />

@@ -1,9 +1,10 @@
 import { StyleSheet } from 'react-native';
+import { lightTheme } from '../constants/colors';
 
 const CoreParametersSectionStyles = StyleSheet.create({
   card: {
     width: '100%',
-    backgroundColor: '#f8fafd',
+    backgroundColor: lightTheme.cardBackground,
     borderRadius: 14,
     padding: 12,
     marginBottom: 10,
@@ -13,7 +14,7 @@ const CoreParametersSectionStyles = StyleSheet.create({
   sectionTitle: {
     fontSize: 22,
     fontWeight: '700',
-    color: '#222',
+    color: lightTheme.primaryText,
     textAlign: 'center',
     marginBottom: 12,
     letterSpacing: 0.2,
@@ -30,13 +31,13 @@ const CoreParametersSectionStyles = StyleSheet.create({
   },
   sliderLabel: {
     fontSize: 16,
-    color: '#333',
+    color: lightTheme.text,
     marginBottom: 2,
     fontWeight: '500',
   },
   sliderValue: {
     fontWeight: '700',
-    color: '#007bff',
+    color: lightTheme.primary,
     fontSize: 16,
     marginLeft: 4,
   },

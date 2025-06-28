@@ -81,3 +81,6 @@ ios/
 
 # Expo web build
 web-build/
+
+#Cursor
+.cursorrules

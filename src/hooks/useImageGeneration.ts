@@ -1,5 +1,4 @@
 import { useCallback, useRef, useState } from 'react';
-import { Alert } from 'react-native';
 import { SLIDER_CONFIG } from '../constants/config';
 import { useSession } from '../contexts';
 import { apiService } from '../services/api';
@@ -71,7 +70,12 @@ export const useImageGeneration = () => {
         setPendingGenerations(prev => prev.filter(req => req.id !== request.id));
         
       } catch (error: any) {
-        Alert.alert('Error', error.message || 'Failed to generate image');
+        // Don't show error alert - just log to console
+        if (error.message && (error.message.includes('timeout') || error.message.includes('network'))) {
+          console.log('Network/timeout error during image generation:', error.message);
+        } else {
+          console.log('Image generation failed:', error.message || 'Failed to generate image');
+        }
         // Remove failed request from pending
         setPendingGenerations(prev => prev.filter(req => req.id !== request.id));
       } finally {
@@ -85,9 +89,11 @@ export const useImageGeneration = () => {
 
   const generateImage = async (options?: Partial<Omit<GenerationRequest, 'id'>>) : Promise<string | null> => {
     if (!sessionId) {
-      Alert.alert('Error', 'No session available. Please wait for session to be created.');
+      // Don't show error alert - just log to console
+      console.log('No session available for image generation');
       return null;
     }
+    
     const requestId = Date.now().toString();
     const request: GenerationRequest = {
       id: requestId,
@@ -102,13 +108,16 @@ export const useImageGeneration = () => {
       height: options?.height ?? 768,
       ...options,
     };
+    
     // Add to queue
     generationQueueRef.current.push(request);
     setPendingGenerations(prev => [...prev, request]);
+    
     // Start processing if not already processing
     if (!isProcessingRef.current) {
       processGenerationQueue();
     }
+    
     // Return the request ID so caller can track it
     return requestId;
   };

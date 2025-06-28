@@ -12,21 +12,6 @@ const SidePanelStyles = StyleSheet.create({
     justifyContent: 'flex-start',
     overflow: 'hidden',
   },
-  arrowButton: {
-    borderRadius: 18,
-    width: 36,
-    height: 36,
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 1,
-    boxShadow: '0px 2px 8px rgba(0,0,0,0.12)',
-    marginTop: -18,
-    alignSelf: 'center',
-  },
-  arrowText: {
-    fontSize: 22,
-    fontWeight: 'bold',
-  },
   panelContent: {
     width: '100%',
     marginTop: 24,
@@ -50,6 +35,18 @@ const SidePanelStyles = StyleSheet.create({
     fontSize: 22,
     fontWeight: 'bold',
     paddingHorizontal: 8,
+  },
+  parametersContainer: {
+    alignItems: 'center',
+    width: '100%',
+  },
+  arrowButtonContainer: {
+    alignItems: 'center',
+    paddingTop: 8,
+  },
+  scrollViewContent: {
+    paddingBottom: 24,
+    flexGrow: 1,
   },
 });
 

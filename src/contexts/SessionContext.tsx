@@ -1,5 +1,4 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
-import { Alert, StyleSheet, Text, View } from 'react-native';
 import { apiService } from '../services/api';
 
 interface SessionContextType {
@@ -7,13 +6,14 @@ interface SessionContextType {
   isLoading: boolean;
   error: string | null;
   refreshSession: () => Promise<void>;
+  markSessionAsInvalid: () => void;
 }
 
 const SessionContext = createContext<SessionContextType | undefined>(undefined);
 
 export const useSession = () => {
   const context = useContext(SessionContext);
-  if (context === undefined) {
+  if (!context) {
     throw new Error('useSession must be used within a SessionProvider');
   }
   return context;
@@ -23,7 +23,7 @@ interface SessionProviderProps {
   children: React.ReactNode;
 }
 
-export const SessionProvider: React.FC<SessionProviderProps> = ({ children }) => {
+export function SessionProvider({ children }: SessionProviderProps) {
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -36,8 +36,9 @@ export const SessionProvider: React.FC<SessionProviderProps> = ({ children }) =>
       setSessionId(newSessionId);
     } catch (err: any) {
       const errorMessage = err.message || 'Failed to create session';
-      setError(errorMessage);
-      Alert.alert('Session Error', errorMessage);
+      console.log('Session creation failed:', errorMessage);
+      setSessionId(null);
+      setError('No Session');
     } finally {
       setIsLoading(false);
     }
@@ -47,8 +48,16 @@ export const SessionProvider: React.FC<SessionProviderProps> = ({ children }) =>
     await createSession();
   };
 
+  const markSessionAsInvalid = () => {
+    console.log('Session marked as invalid, creating new session...');
+    setSessionId(null);
+    setError('Session expired or invalid');
+    createSession();
+  };
+
   useEffect(() => {
-    // Create session on app startup
+    // Set up session error callback
+    apiService.setSessionErrorCallback(markSessionAsInvalid);
     createSession();
   }, []);
 
@@ -57,65 +66,12 @@ export const SessionProvider: React.FC<SessionProviderProps> = ({ children }) =>
     isLoading,
     error,
     refreshSession,
+    markSessionAsInvalid,
   };
 
-  // Show loading screen while session is being created
-  if (isLoading) {
-    return (
-      <View style={styles.loadingContainer}>
-        <Text style={styles.loadingText}>Initializing session...</Text>
-      </View>
-    );
-  }
-
-  // Show error screen if session creation failed
-  if (error) {
-    return (
-      <View style={styles.errorContainer}>
-        <Text style={styles.errorText}>Failed to initialize session</Text>
-        <Text style={styles.errorSubtext}>{error}</Text>
-      </View>
-    );
-  }
-
-  // Only render children when session is ready
   return (
     <SessionContext.Provider value={value}>
       {children}
     </SessionContext.Provider>
   );
-};
-
-const styles = StyleSheet.create({
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#242428FF',
-  },
-  loadingText: {
-    fontSize: 16,
-    fontWeight: '500',
-    color: '#f4f4f5',
-    textAlign: 'center',
-  },
-  errorContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#242428FF',
-    padding: 20,
-  },
-  errorText: {
-    fontSize: 16,
-    fontWeight: '500',
-    color: '#f4f4f5',
-    textAlign: 'center',
-    marginBottom: 8,
-  },
-  errorSubtext: {
-    fontSize: 14,
-    color: '#a1a1aa',
-    textAlign: 'center',
-  },
-}); 
+} 

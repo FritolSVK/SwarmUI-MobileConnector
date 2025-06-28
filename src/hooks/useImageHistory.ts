@@ -3,7 +3,7 @@ import { API_CONFIG } from '../constants/config';
 import { useSession } from '../contexts';
 import { apiService } from '../services/api';
 import { HistoryImage } from '../types/HistoryImage';
-import { createAndStoreThumbnail } from '../utils/imageUtils';
+import { cleanupThumbnails, createAndStoreThumbnail } from '../utils/imageUtils';
 
 // Helper to strip leading "raw/" if present
 function stripRawPrefix(path: string) {
@@ -19,6 +19,7 @@ export const useImageHistory = () => {
   const [currentPage, setCurrentPage] = useState(0);
   const [hasMore, setHasMore] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
+  const [isLoadingThumbnails, setIsLoadingThumbnails] = useState(false);
   const { sessionId } = useSession();
 
   const ITEMS_PER_PAGE = 20;
@@ -71,12 +72,26 @@ export const useImageHistory = () => {
 
   // New function: fetch image and create thumbnail in one step
   const fetchAndCreateThumbnail = useCallback(async (filename: string, id: string): Promise<string | undefined> => {
-    const imageData = await apiService.fetchImage(filename, sessionId || undefined);
-    if (!imageData) return undefined;
     try {
-      return await createAndStoreThumbnail(imageData, id);
+      const imageData = await apiService.fetchImage(filename, sessionId || undefined);
+      if (!imageData) {
+        console.warn('No image data received for filename:', filename);
+        return undefined;
+      }
+      
+      // Create a safe ID for thumbnail creation
+      const safeId = `${id}_${Date.now()}`;
+      const thumbnailUri = await createAndStoreThumbnail(imageData, safeId);
+      
+      if (!thumbnailUri) {
+        console.warn('Thumbnail creation returned null for filename:', filename);
+        return undefined;
+      }
+      
+      return thumbnailUri;
     } catch (e) {
-      console.warn('Failed to create thumbnail:', e);
+      console.warn('Failed to create thumbnail for filename:', filename, 'Error:', e);
+      // Don't throw the error, just return undefined so the app can continue
       return undefined;
     }
   }, [sessionId]);
@@ -86,35 +101,66 @@ export const useImageHistory = () => {
     setLoading(true);
     setError(null);
     try {
+      // Clean up any corrupted thumbnails first
+      await cleanupThumbnails();
+      
       const response = await apiService.listImages("", 3, "Name", false, sessionId || undefined);
       setAllImageFiles(response.files);
       const firstPageFiles = response.files.slice(0, ITEMS_PER_PAGE);
       const imageObjects = processImageFiles(firstPageFiles);
-      // Create thumbnails for the first page
-      const imagesWithThumbnails = await Promise.all(
-        imageObjects.map(async (image) => {
-          const thumbnailUri = await fetchAndCreateThumbnail(image.filename, image.id);
-          return {
-            ...image,
-            imageData: undefined,
-            thumbnailUri,
-          };
-        })
-      );
-      setImages(imagesWithThumbnails);
+      
+      // Set images immediately with loading states (no thumbnails yet)
+      const imagesWithLoadingStates = imageObjects.map((image) => ({
+        ...image,
+        imageData: undefined,
+        thumbnailUri: undefined, // This will trigger loading state
+      }));
+      setImages(imagesWithLoadingStates);
       setCurrentPage(0);
       setHasMore(response.files.length > ITEMS_PER_PAGE);
       setHasLoaded(true);
+      
+      // Load thumbnails sequentially to prevent timeouts
+      setIsLoadingThumbnails(true);
+      for (let i = 0; i < imageObjects.length; i++) {
+        const image = imageObjects[i];
+        try {
+          const thumbnailUri = await fetchAndCreateThumbnail(image.filename, image.id);
+          setImages(prev => prev.map((img, index) => 
+            index === i 
+              ? { ...img, thumbnailUri }
+              : img
+          ));
+          // Small delay between requests to prevent overwhelming the server
+          await new Promise(resolve => setTimeout(resolve, 100));
+        } catch (error) {
+          console.warn(`Failed to load thumbnail for image ${i + 1}/${imageObjects.length}:`, error);
+          // Continue with next image even if this one fails
+        }
+      }
+      setIsLoadingThumbnails(false);
+      
     } catch (err) {
       console.error('Failed to fetch images:', err);
-      setError(err instanceof Error ? err.message : 'Failed to fetch images');
+      // Don't show timeout or network errors to the user
+      if (err instanceof Error) {
+        if (err.message.includes('timeout') || err.message.includes('network')) {
+          console.log('Network/timeout error occurred, not showing to user');
+          // Don't set error state for timeout/network issues
+        } else {
+          setError(err.message);
+        }
+      } else {
+        setError('Failed to fetch images');
+      }
     } finally {
       setLoading(false);
+      setIsLoadingThumbnails(false);
     }
   }, [hasLoaded, processImageFiles, sessionId, fetchAndCreateThumbnail]);
 
   const loadMoreImages = useCallback(async () => {
-    if (loadingMore || !hasMore) return;
+    if (loadingMore || !hasMore || isLoadingThumbnails) return; // Don't load more if still loading thumbnails
     setLoadingMore(true);
     try {
       const nextPage = currentPage + 1;
@@ -126,26 +172,51 @@ export const useImageHistory = () => {
         return;
       }
       const imageObjects = processImageFiles(nextPageFiles);
-      // Create thumbnails for the new page
-      const imagesWithThumbnails = await Promise.all(
-        imageObjects.map(async (image) => {
-          const thumbnailUri = await fetchAndCreateThumbnail(image.filename, image.id);
-          return {
-            ...image,
-            imageData: undefined,
-            thumbnailUri,
-          };
-        })
-      );
-      setImages(prev => [...prev, ...imagesWithThumbnails]);
+      
+      // Add images immediately with loading states
+      const imagesWithLoadingStates = imageObjects.map((image) => ({
+        ...image,
+        imageData: undefined,
+        thumbnailUri: undefined, // This will trigger loading state
+      }));
+      setImages(prev => [...prev, ...imagesWithLoadingStates]);
       setCurrentPage(nextPage);
       setHasMore(endIndex < allImageFiles.length);
+      
+      // Load thumbnails sequentially to prevent timeouts
+      setIsLoadingThumbnails(true);
+      const currentImagesLength = (nextPage * ITEMS_PER_PAGE);
+      for (let i = 0; i < imageObjects.length; i++) {
+        const image = imageObjects[i];
+        try {
+          const thumbnailUri = await fetchAndCreateThumbnail(image.filename, image.id);
+          setImages(prev => prev.map((img, index) => 
+            index === (currentImagesLength + i)
+              ? { ...img, thumbnailUri }
+              : img
+          ));
+          // Small delay between requests to prevent overwhelming the server
+          await new Promise(resolve => setTimeout(resolve, 100));
+        } catch (error) {
+          console.warn(`Failed to load thumbnail for image ${i + 1}/${imageObjects.length}:`, error);
+          // Continue with next image even if this one fails
+        }
+      }
+      setIsLoadingThumbnails(false);
+      
     } catch (err) {
       console.error('Failed to load more images:', err);
+      // Don't show timeout or network errors to the user - just log them
+      if (err instanceof Error) {
+        if (err.message.includes('timeout') || err.message.includes('network')) {
+          console.log('Network/timeout error occurred while loading more images, not showing to user');
+        }
+      }
     } finally {
       setLoadingMore(false);
+      setIsLoadingThumbnails(false);
     }
-  }, [loadingMore, hasMore, currentPage, allImageFiles, processImageFiles, fetchAndCreateThumbnail]);
+  }, [loadingMore, hasMore, currentPage, allImageFiles, processImageFiles, fetchAndCreateThumbnail, isLoadingThumbnails]);
 
   const addImage = useCallback((imageUrl: string, prompt: string) => {
     const newImage: HistoryImage = {
@@ -222,6 +293,7 @@ export const useImageHistory = () => {
     error,
     loadingMore,
     hasMore,
+    isLoadingThumbnails,
     addImage,
     removeImage,
     clearHistory,
@@ -233,7 +305,9 @@ export const useImageHistory = () => {
     loadImageData,
     releaseImageData,
     totalCount: allImageFiles.length,
+    loadedThumbnailCount: images.filter(img => img.thumbnailUri).length,
   };
 };
 
 export { HistoryImage };
+

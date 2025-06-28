@@ -1,9 +1,10 @@
-import React, { useEffect, useRef } from 'react';
-import { Animated, Dimensions, Text, TouchableOpacity, View } from 'react-native';
+import { useEffect, useRef } from 'react';
+import { Animated, Dimensions, ScrollView, Text, TouchableOpacity, View } from 'react-native';
 import { PANEL_EXPANDED_HEIGHT } from '../../hooks/useSidePanel';
 import { useTheme } from '../../hooks/useTheme';
 import SidePanelStyles from '../../styles/SidePanelStyles';
 import { SidePanelProps } from '../../types/SidePanelProps';
+import ArrowButton from '../ui/ArrowButton';
 import CoreParametersSection from './CoreParametersSection';
 import ResolutionSection from './ResolutionSection';
 import SamplingSection from './SamplingSection';
@@ -59,14 +60,21 @@ function ParametersPanel({
   }, [showSidePanel, contentOpacity]);
 
   return (
-    <View style={{ alignItems: 'center', width: '100%', backgroundColor: theme.panel }}>
-      <TouchableOpacity
-        style={[SidePanelStyles.arrowButton, { marginTop: 0, marginBottom: -18, zIndex: 10, backgroundColor: theme.background, borderColor: theme.border }]}
-        onPress={() => setShowSidePanel(!showSidePanel)}
-        activeOpacity={0.8}
+    <View style={[SidePanelStyles.parametersContainer, { backgroundColor: theme.panel }]}>
+      <Animated.View
+        style={[
+          SidePanelStyles.arrowButtonContainer,
+          {
+            transform: [{ translateY: slideYAnim }],
+          }
+        ]}
       >
-        <Text style={[SidePanelStyles.arrowText, { color: theme.accent }]}>{showSidePanel ? '▼' : '▲'}</Text>
-      </TouchableOpacity>
+        <ArrowButton
+          direction={showSidePanel ? 'down' : 'up'}
+          onPress={() => setShowSidePanel(!showSidePanel)}
+          side="center"
+        />
+      </Animated.View>
       <Animated.View
         style={[
           SidePanelStyles.bottomPanel,
@@ -92,58 +100,60 @@ function ParametersPanel({
           ]}
           pointerEvents={showSidePanel ? 'auto' : 'none'}
         >
-          {/* Core Parameters Section */}
-          <TouchableOpacity onPress={() => setShowCoreParams(!showCoreParams)} style={[SidePanelStyles.sectionHeader, { backgroundColor: theme.panel, borderColor: theme.border }]}>
-            <Text style={[SidePanelStyles.sectionHeaderText, { color: theme.text }]}>Core Parameters</Text>
-            <Text style={[SidePanelStyles.sectionHeaderToggle, { color: theme.accent }]}>{showCoreParams ? '-' : '+'}</Text>
-          </TouchableOpacity>
-          {showCoreParams && (
-            <CoreParametersSection
-              steps={steps}
-              setSteps={setSteps}
-              cfgScale={cfgScale}
-              setCfgScale={setCfgScale}
-              loading={loading}
-              images={images}
-              setImages={setImages}
-              seed={seed}
-              setSeed={setSeed}
-              aspectRatio={aspectRatio}
-              setAspectRatio={setAspectRatio}
-              width={width}
-              height={height}
-            />
-          )}
+          <ScrollView contentContainerStyle={SidePanelStyles.scrollViewContent}>
+            {/* Core Parameters Section */}
+            <TouchableOpacity onPress={() => setShowCoreParams(!showCoreParams)} style={[SidePanelStyles.sectionHeader, { backgroundColor: theme.panel, borderColor: theme.border }]}>
+              <Text style={[SidePanelStyles.sectionHeaderText, { color: theme.text }]}>Core Parameters</Text>
+              <Text style={[SidePanelStyles.sectionHeaderToggle, { color: theme.accent }]}>{showCoreParams ? '-' : '+'}</Text>
+            </TouchableOpacity>
+            {showCoreParams && (
+              <CoreParametersSection
+                steps={steps}
+                setSteps={setSteps}
+                cfgScale={cfgScale}
+                setCfgScale={setCfgScale}
+                loading={loading}
+                images={images}
+                setImages={setImages}
+                seed={seed}
+                setSeed={setSeed}
+                aspectRatio={aspectRatio}
+                setAspectRatio={setAspectRatio}
+                width={width}
+                height={height}
+              />
+            )}
 
-          {/* Sampling Section */}
-          <TouchableOpacity onPress={() => setShowSampling(!showSampling)} style={[SidePanelStyles.sectionHeader, { backgroundColor: theme.panel, borderColor: theme.border }]}>
-            <Text style={[SidePanelStyles.sectionHeaderText, { color: theme.text }]}>Sampling</Text>
-            <Text style={[SidePanelStyles.sectionHeaderToggle, { color: theme.accent }]}>{showSampling ? '-' : '+'}</Text>
-          </TouchableOpacity>
-          {showSampling && (
-            <SamplingSection
-              sampler={sampler}
-              setSampler={setSampler}
-              scheduler={scheduler}
-              setScheduler={setScheduler}
-              loading={loading}
-            />
-          )}
+            {/* Sampling Section */}
+            <TouchableOpacity onPress={() => setShowSampling(!showSampling)} style={[SidePanelStyles.sectionHeader, { backgroundColor: theme.panel, borderColor: theme.border }]}>
+              <Text style={[SidePanelStyles.sectionHeaderText, { color: theme.text }]}>Sampling</Text>
+              <Text style={[SidePanelStyles.sectionHeaderToggle, { color: theme.accent }]}>{showSampling ? '-' : '+'}</Text>
+            </TouchableOpacity>
+            {showSampling && (
+              <SamplingSection
+                sampler={sampler}
+                setSampler={setSampler}
+                scheduler={scheduler}
+                setScheduler={setScheduler}
+                loading={loading}
+              />
+            )}
 
-          {/* Resolution Section */}
-          <TouchableOpacity onPress={() => setShowResolution(!showResolution)} style={[SidePanelStyles.sectionHeader, { backgroundColor: theme.panel, borderColor: theme.border }]}>
-            <Text style={[SidePanelStyles.sectionHeaderText, { color: theme.text }]}>Resolution</Text>
-            <Text style={[SidePanelStyles.sectionHeaderToggle, { color: theme.accent }]}>{showResolution ? '-' : '+'}</Text>
-          </TouchableOpacity>
-          {showResolution && (
-            <ResolutionSection
-              aspectRatio={aspectRatio}
-              setAspectRatio={setAspectRatio}
-              width={width}
-              height={height}
-              loading={loading}
-            />
-          )}
+            {/* Resolution Section */}
+            <TouchableOpacity onPress={() => setShowResolution(!showResolution)} style={[SidePanelStyles.sectionHeader, { backgroundColor: theme.panel, borderColor: theme.border }]}>
+              <Text style={[SidePanelStyles.sectionHeaderText, { color: theme.text }]}>Resolution</Text>
+              <Text style={[SidePanelStyles.sectionHeaderToggle, { color: theme.accent }]}>{showResolution ? '-' : '+'}</Text>
+            </TouchableOpacity>
+            {showResolution && (
+              <ResolutionSection
+                aspectRatio={aspectRatio}
+                setAspectRatio={setAspectRatio}
+                width={width}
+                height={height}
+                loading={loading}
+              />
+            )}
+          </ScrollView>
         </Animated.View>
       </Animated.View>
     </View>

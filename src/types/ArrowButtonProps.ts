@@ -1,5 +1,5 @@
 export interface ArrowButtonProps {
-  direction: 'left' | 'right';
+  direction: 'left' | 'right' | 'up' | 'down';
   onPress: () => void;
-  side?: 'left' | 'right';
+  side?: 'left' | 'right' | 'center';
 } 
