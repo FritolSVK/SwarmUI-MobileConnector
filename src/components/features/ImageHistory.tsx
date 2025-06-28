@@ -42,10 +42,18 @@ export default function ImageHistory({
   const [showModal, setShowModal] = useState(false);
   const [showBottomPanel, setShowBottomPanel] = useState(true);
   const bottomPanelAnim = useRef(new Animated.Value(1)).current; // 1 = shown, 0 = hidden
+  const hasLoadedOnceRef = useRef(false);
   const { theme } = useTheme();
 
   // Track which images are visible
   const viewableIdsRef = useRef<Set<string>>(new Set());
+
+  // Mark as loaded once when images are first loaded
+  useEffect(() => {
+    if (images.length > 0 && !hasLoadedOnceRef.current) {
+      hasLoadedOnceRef.current = true;
+    }
+  }, [images.length]);
 
   useEffect(() => {
     Animated.timing(bottomPanelAnim, {
@@ -183,7 +191,7 @@ export default function ImageHistory({
         onEndReachedThreshold={0.5}
         ListFooterComponent={renderLoadMoreIndicator}
         ListEmptyComponent={renderEmptyComponent}
-        refreshing={loading}
+        refreshing={false}
         onRefresh={onRefresh}
         showsVerticalScrollIndicator={false}
         onViewableItemsChanged={onViewableItemsChanged}
