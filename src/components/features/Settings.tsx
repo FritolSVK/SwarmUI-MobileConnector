@@ -1,5 +1,6 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Alert, ScrollView, Switch, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { getSwarmBaseUrl, setSwarmBaseUrl as setGlobalSwarmBaseUrl } from '../../constants/config';
 import { useSession } from '../../contexts/SessionContext';
 import { useTheme } from '../../hooks/useTheme';
 import SettingsStyles from '../../styles/SettingsStyles';
@@ -8,7 +9,12 @@ import { SettingsProps } from '../../types/SettingsProps';
 export default function Settings({ onClearHistory, onExportData }: SettingsProps) {
   const { theme, themeMode, toggleTheme } = useTheme();
   const { sessionId, isLoading: sessionLoading, error: sessionError, refreshSession } = useSession();
-  const [swarmBaseUrl, setSwarmBaseUrl] = useState('http://192.168.1.100:7801');
+  const [swarmBaseUrl, setSwarmBaseUrl] = useState(getSwarmBaseUrl());
+
+  // Sync with global config when component mounts
+  useEffect(() => {
+    setSwarmBaseUrl(getSwarmBaseUrl());
+  }, []);
 
   const handleClearHistory = async () => {
     Alert.alert(
@@ -55,7 +61,14 @@ export default function Settings({ onClearHistory, onExportData }: SettingsProps
   };
 
   const handleUpdateSwarmBaseUrl = () => {
-    Alert.alert('Success', 'Swarm Base URL has been updated.');
+    try {
+      setGlobalSwarmBaseUrl(swarmBaseUrl);
+      Alert.alert('Success', 'Swarm Base URL has been updated. Please refresh the session.');
+      // Refresh session with new URL
+      refreshSession();
+    } catch (error) {
+      Alert.alert('Error', 'Failed to update Swarm Base URL.');
+    }
   };
 
   const handleRestartBackends = async () => {

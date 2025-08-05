@@ -1,0 +1,1 @@
+// All test connection and test image endpoint functions removed as per requirements. 

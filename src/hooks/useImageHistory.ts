@@ -90,7 +90,7 @@ export const useImageHistory = () => {
         
         return {
           id: consistentId, // Use consistent ID based on filename
-          url: `${API_CONFIG.SWARM_BASE_URL}/View/local/raw/${encodeURIComponent(cleanSrc)}`,
+          url: API_CONFIG.SWARM_IMAGE_FETCH_URL(cleanSrc),
           filename: cleanSrc,
           prompt: suiParams.prompt ?? 'No prompt available',
           negativePrompt: suiParams.negativeprompt ?? '',

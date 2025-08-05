@@ -26,7 +26,7 @@ function createTimeoutPromise(timeoutMs: number): Promise<never> {
 
 class ApiService {
   private onSessionError?: () => void;
-  private requestTimeout = 30000; // 30 seconds timeout
+  private requestTimeout = 60000; // 60 seconds timeout for Mac compatibility
 
   setSessionErrorCallback(callback: () => void) {
     this.onSessionError = callback;
@@ -34,6 +34,8 @@ class ApiService {
 
   private async makeRequest<T>(url: string, options: RequestInit): Promise<T> {
     try {
+      console.log('Making API request to:', url);
+      
       // Create a timeout promise
       const timeoutPromise = createTimeoutPromise(this.requestTimeout);
       
@@ -164,15 +166,19 @@ class ApiService {
     return imageUrl;
   }
 
-  async fetchImage(filename: string, sessionId: string = ""): Promise<string> {
+  async fetchImage(filename: string, sessionId?: string): Promise<string> {
     try {
-      // Use the correct URL pattern: /View/local/raw/{filename}
+      console.log('Original filename:', filename);
+      console.log('Session ID:', sessionId);
+      // Use the endpoint from API_CONFIG
       const cleanFilename = stripRawPrefix(filename);
-      const imageUrl = `${API_CONFIG.SWARM_BASE_URL}/View/local/raw/${encodeURIComponent(cleanFilename)}`;
-      
+      console.log('Clean filename:', cleanFilename);
+      const imageUrl = API_CONFIG.SWARM_IMAGE_FETCH_URL(cleanFilename);
+      console.log('Fetching image from:', imageUrl);
+
       // Create a timeout promise
       const timeoutPromise = createTimeoutPromise(this.requestTimeout);
-      
+
       // Create the fetch promise
       const fetchPromise = fetch(imageUrl, {
         method: 'GET',
@@ -207,13 +213,11 @@ class ApiService {
         console.log('Image fetch timed out:', filename);
         throw new Error('Image fetch timed out');
       }
-      
       // Handle network errors silently
       if (error.name === 'TypeError' && error.message.includes('fetch')) {
         console.log('Image fetch network error:', error.message);
         throw new Error('Image fetch network error');
       }
-      
       console.error('Failed to fetch image:', error);
       throw error;
     }
