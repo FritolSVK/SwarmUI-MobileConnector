@@ -107,6 +107,15 @@ export default function ImageHistory({
       console.warn('Failed to load thumbnail for image:', item.id);
     };
 
+    // New: handle press differently for failed images
+    const handleTilePress = () => {
+      if (isImageFailed && onRefreshImage) {
+        onRefreshImage(item.id);
+      } else {
+        handleImagePress(item);
+      }
+    };
+
     return (
       <TouchableOpacity
         key={`${item.id}-${index}`}
@@ -114,7 +123,7 @@ export default function ImageHistory({
           ImageHistoryStyles.imageTile,
           { backgroundColor: theme.panel, borderColor: theme.border }
         ]}
-        onPress={() => handleImagePress(item)}
+        onPress={handleTilePress}
       >
         <View style={ImageHistoryStyles.imageContainer}>
           {isImageLoading ? (
@@ -122,7 +131,7 @@ export default function ImageHistory({
               <ActivityIndicator size="small" color={theme.accent} />
             </View>
           ) : isImageFailed ? (
-            <View style={[ImageHistoryStyles.imageFailedContainer, { backgroundColor: theme.panel }]}>
+            <View style={[ImageHistoryStyles.imageFailedContainer, { backgroundColor: theme.panel }]}> 
               <Text style={[ImageHistoryStyles.failedText, { color: theme.secondaryText }]}>✕</Text>
             </View>
           ) : (
