@@ -38,7 +38,7 @@ export default function ImageHistory({
   noSession = false,
   isLoadingThumbnails = false
 }: ImageHistoryProps) {
-  const [selectedImage, setSelectedImage] = useState<HistoryImage | null>(null);
+  const [selectedImageId, setSelectedImageId] = useState<string | null>(null);
   const [showModal, setShowModal] = useState(false);
   const [showBottomPanel, setShowBottomPanel] = useState(true);
   const bottomPanelAnim = useRef(new Animated.Value(1)).current; // 1 = shown, 0 = hidden
@@ -64,36 +64,26 @@ export default function ImageHistory({
     }).start();
   }, [showBottomPanel, bottomPanelAnim]);
 
+  // Only track visible IDs for possible future use, but do not load HD images here
   const onViewableItemsChanged = useCallback(({ viewableItems, changed }: { viewableItems: ViewToken[], changed: ViewToken[] }) => {
     const newVisibleIds = new Set(viewableItems.map(v => v.item.id));
-    
-    // Load imageData for newly visible images (but not failed ones)
-    viewableItems.forEach(v => {
-      if (loadImageData && v.item.id && !v.item.imageData && !v.item.thumbnailFailed) {
-        // Only load HD data if we have a thumbnail to show first
-        if (v.item.thumbnailUri) {
-          loadImageData(v.item.id);
-        }
-      }
-    });
-    
-    // Release imageData for images that are no longer visible
+    // Release imageData for images that are no longer visible (if not in modal)
     viewableIdsRef.current.forEach(id => {
       if (!newVisibleIds.has(id) && releaseImageData) {
         releaseImageData(id);
       }
     });
     viewableIdsRef.current = newVisibleIds;
-  }, [loadImageData, releaseImageData]);
+  }, [releaseImageData]);
 
+  // When modal opens, load HD image; when closes, release it
   const handleImagePress = (image: HistoryImage) => {
-    if (showModal && selectedImage?.id === image.id) {
+    if (showModal && selectedImageId === image.id) {
       closeModal();
     } else {
-      setSelectedImage(image);
+      setSelectedImageId(image.id);
       setShowModal(true);
-      
-      // Automatically load HD image data when opening in modal if not already loaded
+      // Only load HD image data when opening modal
       if (loadImageData && image.id && !image.imageData && !image.thumbnailFailed && image.thumbnailUri) {
         loadImageData(image.id);
       }
@@ -101,8 +91,12 @@ export default function ImageHistory({
   };
 
   const closeModal = () => {
+    // Release HD image data when closing modal
+    if (selectedImageId && releaseImageData) {
+      releaseImageData(selectedImageId);
+    }
     setShowModal(false);
-    setSelectedImage(null);
+    setSelectedImageId(null);
   };
 
   const formatDate = (date: Date) => {
@@ -205,6 +199,9 @@ export default function ImageHistory({
       </View>
     );
   }
+
+  // Find the current selected image from images array
+  const selectedImage = selectedImageId ? images.find(img => img.id === selectedImageId) : null;
 
   return (
     <View style={[ImageHistoryStyles.container, { backgroundColor: theme.background }]}>
