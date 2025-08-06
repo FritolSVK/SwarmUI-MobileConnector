@@ -16,6 +16,7 @@ interface UserSettings {
   showSampling?: boolean
   showResolution?: boolean
   showSidePanel?: boolean
+  swarmPassword?: string
 }
 
 // Interface for cached image metadata

@@ -1,15 +1,33 @@
 import { useEffect, useState } from 'react';
 import { Alert, ScrollView, Switch, Text, TextInput, TouchableOpacity, View } from 'react-native';
-import { getSwarmBaseUrl, setSwarmBaseUrl as setGlobalSwarmBaseUrl } from '../../constants/config';
+import { getSwarmBaseUrl, getSwarmPassword, setSwarmBaseUrl as setGlobalSwarmBaseUrl, setSwarmPassword as setGlobalSwarmPassword } from '../../constants/config';
 import { useSession } from '../../contexts/SessionContext';
 import { useTheme } from '../../hooks/useTheme';
 import SettingsStyles from '../../styles/SettingsStyles';
 import { SettingsProps } from '../../types/SettingsProps';
+import { loadUserSettings, saveUserSettings } from '../../utils/storage';
 
 export default function Settings({ onClearHistory, onExportData }: SettingsProps) {
   const { theme, themeMode, toggleTheme } = useTheme();
-  const { sessionId, isLoading: sessionLoading, error: sessionError, refreshSession } = useSession();
+  const { sessionId, isLoading: sessionLoading, error: sessionError, refreshSession, retryCount, maxRetries } = useSession();
   const [swarmBaseUrl, setSwarmBaseUrl] = useState(getSwarmBaseUrl());
+  const [swarmPassword, setSwarmPassword] = useState(getSwarmPassword());
+
+  // Load saved settings on component mount
+  useEffect(() => {
+    const loadSettings = async () => {
+      try {
+        const settings = await loadUserSettings();
+        if (settings.swarmPassword) {
+          setSwarmPassword(settings.swarmPassword);
+          setGlobalSwarmPassword(settings.swarmPassword);
+        }
+      } catch (error) {
+        console.error('Failed to load settings:', error);
+      }
+    };
+    loadSettings();
+  }, []);
 
   // Sync with global config when component mounts
   useEffect(() => {
@@ -68,6 +86,20 @@ export default function Settings({ onClearHistory, onExportData }: SettingsProps
       refreshSession();
     } catch (error) {
       Alert.alert('Error', 'Failed to update Swarm Base URL.');
+    }
+  };
+
+  const handleSwarmPasswordChange = (text: string) => {
+    setSwarmPassword(text);
+  };
+
+  const handleUpdateSwarmPassword = async () => {
+    try {
+      setGlobalSwarmPassword(swarmPassword);
+      await saveUserSettings({ swarmPassword });
+      Alert.alert('Success', 'Swarm Password has been updated.');
+    } catch (error) {
+      Alert.alert('Error', 'Failed to update Swarm Password.');
     }
   };
 
@@ -156,9 +188,11 @@ export default function Settings({ onClearHistory, onExportData }: SettingsProps
         
         {renderSettingItem({
           title: 'Refresh Session',
-          subtitle: sessionError || 'Session is active',
+          subtitle: sessionError ? 
+            `${sessionError}${retryCount > 0 ? ` (${retryCount}/${maxRetries})` : ''}` : 
+            'Session is active',
           type: 'button',
-          buttonText: 'Refresh',
+          buttonText: sessionLoading ? 'Connecting...' : 'Refresh',
           onValueChange: handleRefreshSession,
         })}
       </View>
@@ -192,6 +226,37 @@ export default function Settings({ onClearHistory, onExportData }: SettingsProps
           onChangeText={handleSwarmBaseUrlChange}
           placeholder="Enter Swarm Base URL"
           placeholderTextColor={theme.secondaryText}
+        />
+        
+        <View style={[SettingsStyles.settingItem, { backgroundColor: theme.panel, borderColor: theme.border }]}>
+          <View style={SettingsStyles.settingInfo}>
+            <Text style={[SettingsStyles.settingTitle, { color: theme.text }]}>Swarm Password</Text>
+            <Text style={[SettingsStyles.settingSubtitle, { color: theme.secondaryText }]}>Password for API authentication</Text>
+          </View>
+          <TouchableOpacity
+            style={[SettingsStyles.button, { backgroundColor: theme.accent }]}
+            onPress={handleUpdateSwarmPassword}
+          >
+            <Text style={[SettingsStyles.buttonText, { color: theme.text }]}>Update</Text>
+          </TouchableOpacity>
+        </View>
+        
+        <TextInput
+          style={[
+            SettingsStyles.textInput,
+            {
+              borderColor: theme.border,
+              color: theme.text,
+              backgroundColor: theme.panel,
+            }
+          ]}
+          value={swarmPassword}
+          onChangeText={handleSwarmPasswordChange}
+          placeholder="Enter Swarm Proxy Password"
+          placeholderTextColor={theme.secondaryText}
+          autoComplete='off'
+          autoCorrect={false}
+          autoCapitalize='none'
         />
         
         {renderSettingItem({

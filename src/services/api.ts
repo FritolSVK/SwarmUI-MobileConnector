@@ -1,4 +1,4 @@
-import { API_CONFIG, MODEL_CONFIG } from '../constants/config';
+import { API_CONFIG, MODEL_CONFIG, getSwarmPassword } from '../constants/config';
 import { GenerationParams, GenerationResponse, SessionResponse } from '../types';
 
 // Update ListImagesResponse to match API docs
@@ -43,6 +43,7 @@ class ApiService {
       const fetchPromise = fetch(url, {
         headers: {
           'Content-Type': 'application/json',
+          'X-Password': getSwarmPassword(),
           ...options.headers,
         },
         ...options,
@@ -182,6 +183,9 @@ class ApiService {
       // Create the fetch promise
       const fetchPromise = fetch(imageUrl, {
         method: 'GET',
+        headers: {
+          'X-Password': getSwarmPassword(),
+        },
       });
 
       // Race between fetch and timeout

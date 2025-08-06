@@ -1,5 +1,8 @@
 // Swarm base URL is now mutable and can be updated at runtime
-let swarmBaseUrl = 'http://192.168.100.229:8443';
+let swarmBaseUrl = 'http://192.168.1.15:8443';
+
+// Password configuration with default value
+let swarmPassword = 'swarmsecure';
 
 export function getSwarmBaseUrl() {
   return swarmBaseUrl;
@@ -10,16 +13,25 @@ export function setSwarmBaseUrl(url: string) {
   updateApiConfig();
 }
 
+export function getSwarmPassword() {
+  return swarmPassword;
+}
+
+export function setSwarmPassword(password: string) {
+  swarmPassword = password;
+  updateApiConfig();
+}
+
 // API_CONFIG is now mutable and updates when the base URL changes
 let API_CONFIG = createApiConfig(swarmBaseUrl);
 
 function createApiConfig(baseUrl: string) {
   return {
     SWARM_BASE_URL: baseUrl,
-    SWARM_SESSION_URL: `${baseUrl}/GetNewSession`,
-    SWARM_GENERATE_URL: `${baseUrl}/GenerateText2Image`,
-    SWARM_LIST_IMAGES_URL: `${baseUrl}/ListImages`,
-    SWARM_RESTART_BACKENDS_URL: `${baseUrl}/RestartBackends`,
+    SWARM_SESSION_URL: `${baseUrl}/api/GetNewSession`,
+    SWARM_GENERATE_URL: `${baseUrl}/api/GenerateText2Image`,
+    SWARM_LIST_IMAGES_URL: `${baseUrl}/api/ListImages`,
+    SWARM_RESTART_BACKENDS_URL: `${baseUrl}/api/RestartBackends`,
     SWARM_IMAGE_FETCH_URL: (filename: string) => `${baseUrl}/View/local/raw/${encodeURIComponent(filename).replace(/%2F/g, '/')}`,
   } as const;
 }
