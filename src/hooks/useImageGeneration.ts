@@ -60,10 +60,10 @@ export const useImageGeneration = () => {
           sessionId!
         );
         
-        // Show the latest generated image
+        // For now, use the URL directly since fetching is failing
+        // The ImageViewer should be able to handle URLs
+        console.log('Using generated image URL directly:', imageUrl);
         setImageUrl(imageUrl);
-        
-        // Mark this generation as completed
         setCompletedGenerations(prev => [...prev, { ...request, id: imageUrl }]);
         
         // Remove from pending

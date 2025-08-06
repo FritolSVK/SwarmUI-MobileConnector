@@ -1,5 +1,6 @@
 import React from 'react';
 import { ActivityIndicator, Animated, Image, View } from 'react-native';
+import { getSwarmPassword } from '../../constants/config';
 import { useImageZoom } from '../../hooks/useImageZoom';
 import { useTheme } from '../../hooks/useTheme';
 import ImageViewerStyles from '../../styles/ImageViewerStyles';
@@ -39,7 +40,12 @@ export default function ImageViewer({ imageUrl, loading, imageWidth, imageHeight
         {...panResponder.panHandlers}
       >
         <Image
-          source={{ uri: imageUrl }}
+          source={{ 
+            uri: imageUrl,
+            headers: {
+              'X-Password': getSwarmPassword()
+            }
+          }}
           style={[
             ImageViewerStyles.image,
             {
