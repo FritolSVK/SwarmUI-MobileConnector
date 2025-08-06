@@ -181,10 +181,16 @@ class ApiService {
       const timeoutPromise = createTimeoutPromise(this.requestTimeout);
 
       // Create the fetch promise
+      const password = getSwarmPassword();
+      console.log('Password for image fetch:', password ? '***' : 'undefined');
+      if (!password) {
+        console.error('No password available for image fetch!');
+        throw new Error('No password configured for image fetch');
+      }
       const fetchPromise = fetch(imageUrl, {
         method: 'GET',
         headers: {
-          'X-Password': getSwarmPassword(),
+          'X-Password': password,
         },
       });
 

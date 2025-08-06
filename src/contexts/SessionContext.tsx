@@ -116,8 +116,12 @@ export function SessionProvider({ children }: SessionProviderProps) {
       try {
         // Load saved password
         const settings = await loadUserSettings();
+        console.log('SessionContext: Loading password from storage:', settings.swarmPassword ? 'found' : 'not found');
         if (settings.swarmPassword) {
+          console.log('SessionContext: Setting password from storage');
           setSwarmPassword(settings.swarmPassword);
+        } else {
+          console.log('SessionContext: Using default password');
         }
       } catch (error) {
         console.error('Failed to load settings:', error);

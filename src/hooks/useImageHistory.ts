@@ -138,6 +138,12 @@ export const useImageHistory = () => {
         return cachedThumbPath;
       }
       
+      // Check if we have a valid session before attempting to fetch
+      if (!sessionId) {
+        console.warn('No session ID available for thumbnail creation');
+        return undefined;
+      }
+      
       const imageData = await apiService.fetchImage(filename, sessionId || undefined);
       if (!imageData) {
         console.warn('No image data received for filename:', filename);
@@ -226,6 +232,12 @@ export const useImageHistory = () => {
     // Filter out video files and clear existing queue and add new items
     const nonVideoImages = imageObjects.filter(image => !isVideoFile(image.filename));
     
+    // Only queue thumbnails if we have a session (for online mode)
+    if (!sessionId) {
+      console.log('No session available, skipping thumbnail queue');
+      return;
+    }
+    
     thumbnailQueue.current = nonVideoImages.map((image, i) => ({
       filename: image.filename,
       id: image.id,
@@ -235,7 +247,9 @@ export const useImageHistory = () => {
 
     setIsLoadingThumbnails(true);
     processThumbnailQueue();
-  }, [processThumbnailQueue]);
+  }, [processThumbnailQueue, sessionId]);
+
+
 
   const fetchImages = useCallback(async () => {
     if (hasLoaded) return; // Don't fetch again if already loaded
@@ -428,8 +442,10 @@ export const useImageHistory = () => {
           
           console.log(`Using ${imagesWithLoadingStates.length} server images in original order from listImages response`);
           
-          // Queue thumbnails for loading one by one
-          queueThumbnails(imageObjects, 0);
+          // Queue thumbnails for loading one by one (only if session is available)
+          if (sessionId) {
+            queueThumbnails(imageObjects, 0);
+          }
           setImages(imagesWithLoadingStates);
           setCurrentPage(0);
           setHasMore(response.files.length > ITEMS_PER_PAGE); // Enable load more button if there are more images
@@ -494,8 +510,10 @@ export const useImageHistory = () => {
       setCurrentPage(nextPage);
       setHasMore(endIndex < allImageFiles.length);
       
-      // Queue thumbnails for loading one by one
-      queueThumbnails(imageObjects, startIndex);
+      // Queue thumbnails for loading one by one (only if session is available)
+      if (sessionId) {
+        queueThumbnails(imageObjects, startIndex);
+      }
       
     } catch (err) {
       console.error('Failed to load more images:', err);
@@ -508,7 +526,7 @@ export const useImageHistory = () => {
     } finally {
       setLoadingMore(false);
     }
-  }, [loadingMore, hasMore, currentPage, allImageFiles, processImageFiles, queueThumbnails, isLoadingThumbnails]);
+  }, [loadingMore, hasMore, currentPage, allImageFiles, processImageFiles, queueThumbnails, isLoadingThumbnails, sessionId]);
 
   const addImage = useCallback((imageUrl: string, prompt: string) => {
     const newImage: HistoryImage = {
@@ -767,35 +785,77 @@ export const useImageHistory = () => {
     const image = images.find(img => img.id === imageId);
     if (!image || !image.filename) return;
 
-    // Fetch fresh image data and recreate thumbnail
-    const imageData = await fetchImageData(image.filename);
-    const thumbnailUri = await fetchAndCreateThumbnail(image.filename, image.id, image);
+    try {
+      console.log(`Refreshing image: ${image.filename}`);
+      
+      // Check if we have a valid session before attempting to refresh
+      if (!sessionId) {
+        console.warn('No session ID available for image refresh');
+        return;
+      }
 
-    setImages(prev => prev.map(img => 
-      img.id === imageId 
-        ? { 
-            ...img, 
-            imageData: imageData || undefined,
-            thumbnailUri: thumbnailUri || undefined,
-            thumbnailFailed: !thumbnailUri
-          }
-        : img
-    ));
-  }, [images, fetchImageData, fetchAndCreateThumbnail]);
+      // Fetch fresh image data and recreate thumbnail
+      const imageData = await fetchImageData(image.filename);
+      const thumbnailUri = await fetchAndCreateThumbnail(image.filename, image.id, image);
+
+      setImages(prev => prev.map(img => 
+        img.id === imageId 
+          ? { 
+              ...img, 
+              imageData: imageData || undefined,
+              thumbnailUri: thumbnailUri || undefined,
+              thumbnailFailed: !thumbnailUri
+            }
+          : img
+      ));
+      
+      console.log(`Successfully refreshed image: ${image.filename}`);
+    } catch (error) {
+      console.error(`Failed to refresh image ${image.filename}:`, error);
+      // Mark as failed if refresh fails
+      setImages(prev => prev.map(img => 
+        img.id === imageId 
+          ? { ...img, thumbnailFailed: true }
+          : img
+      ));
+    }
+  }, [images, fetchImageData, fetchAndCreateThumbnail, sessionId]);
 
   // Load imageData for a specific image (for memory optimization)
   const loadImageData = useCallback(async (imageId: string) => {
     const image = images.find(img => img.id === imageId);
-    if (!image || image.thumbnailUri || image.thumbnailFailed || !image.filename) return;
+    if (!image || !image.filename) return;
 
-    const thumbnailUri = await fetchAndCreateThumbnail(image.filename, image.id, image);
+    // Don't load if we already have imageData or if thumbnail failed
+    if (image.imageData || image.thumbnailFailed) return;
 
-    setImages(prev => prev.map(img =>
-      img.id === imageId
-        ? { ...img, imageData: undefined, thumbnailUri: thumbnailUri || undefined, thumbnailFailed: !thumbnailUri }
-        : img
-    ));
-  }, [images, fetchAndCreateThumbnail]);
+    try {
+      console.log(`Loading HD image data for: ${image.filename}`);
+      
+      // Check if we have a valid session before attempting to load
+      if (!sessionId) {
+        console.warn('No session ID available for HD image loading');
+        return;
+      }
+
+      const imageData = await fetchImageData(image.filename);
+      
+      if (imageData) {
+        console.log(`Successfully loaded HD image data for: ${image.filename}`);
+        setImages(prev => prev.map(img =>
+          img.id === imageId
+            ? { ...img, imageData }
+            : img
+        ));
+      } else {
+        console.warn(`Failed to load HD image data for: ${image.filename}`);
+      }
+    } catch (error) {
+      console.error(`Error loading HD image data for ${image.filename}:`, error);
+      // Don't mark as failed for HD loading errors, just log them
+      // The thumbnail should still be available for display
+    }
+  }, [images, fetchImageData, sessionId]);
 
   // Release imageData for a specific image (for memory optimization)
   const releaseImageData = useCallback((imageId: string) => {

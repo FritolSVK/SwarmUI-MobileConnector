@@ -48,6 +48,10 @@ export default function ImageViewer({ imageUrl, loading, imageWidth, imageHeight
             },
           ]}
           resizeMode="contain"
+          // Add fade-in effect for smoother transitions
+          fadeDuration={200}
+          // Show loading indicator while image is loading
+          loadingIndicatorSource={require('../../../assets/images/icon.png')}
         />
       </Animated.View>
     </View>

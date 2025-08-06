@@ -66,12 +66,17 @@ export default function ImageHistory({
 
   const onViewableItemsChanged = useCallback(({ viewableItems, changed }: { viewableItems: ViewToken[], changed: ViewToken[] }) => {
     const newVisibleIds = new Set(viewableItems.map(v => v.item.id));
+    
     // Load imageData for newly visible images (but not failed ones)
     viewableItems.forEach(v => {
       if (loadImageData && v.item.id && !v.item.imageData && !v.item.thumbnailFailed) {
-        loadImageData(v.item.id);
+        // Only load HD data if we have a thumbnail to show first
+        if (v.item.thumbnailUri) {
+          loadImageData(v.item.id);
+        }
       }
     });
+    
     // Release imageData for images that are no longer visible
     viewableIdsRef.current.forEach(id => {
       if (!newVisibleIds.has(id) && releaseImageData) {
@@ -87,6 +92,11 @@ export default function ImageHistory({
     } else {
       setSelectedImage(image);
       setShowModal(true);
+      
+      // Automatically load HD image data when opening in modal if not already loaded
+      if (loadImageData && image.id && !image.imageData && !image.thumbnailFailed && image.thumbnailUri) {
+        loadImageData(image.id);
+      }
     }
   };
 
@@ -252,8 +262,8 @@ export default function ImageHistory({
             <View style={[ImageHistoryStyles.modalImageWrapper, { backgroundColor: theme.background }]}> 
               {selectedImage && (
                 <ImageViewer
-                  imageUrl={selectedImage.imageData || selectedImage.url}
-                  loading={false}
+                  imageUrl={selectedImage.imageData || selectedImage.thumbnailUri || selectedImage.url}
+                  loading={!selectedImage.imageData && !selectedImage.thumbnailUri}
                   imageWidth={Dimensions.get('window').width}
                   imageHeight={Dimensions.get('window').height - 200}
                   onZoomStart={() => setShowBottomPanel(false)}
