@@ -45,9 +45,12 @@ export const useImageGeneration = () => {
       const request = generationQueueRef.current.shift()!;
       
       try {
-        setLoading(true);
+        // Only set loading to true if there's no current image
+        if (!imageUrl) {
+          setLoading(true);
+        }
         
-        const imageUrl = await apiService.generateImageWithSession(
+        const newImageUrl = await apiService.generateImageWithSession(
           request.prompt,
           request.sampler,
           request.scheduler,
@@ -62,9 +65,9 @@ export const useImageGeneration = () => {
         
         // For now, use the URL directly since fetching is failing
         // The ImageViewer should be able to handle URLs
-        console.log('Using generated image URL directly:', imageUrl);
-        setImageUrl(imageUrl);
-        setCompletedGenerations(prev => [...prev, { ...request, id: imageUrl }]);
+        console.log('Using generated image URL directly:', newImageUrl);
+        setImageUrl(newImageUrl);
+        setCompletedGenerations(prev => [...prev, { ...request, id: newImageUrl }]);
         
         // Remove from pending
         setPendingGenerations(prev => prev.filter(req => req.id !== request.id));
